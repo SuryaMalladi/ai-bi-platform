@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Intelligence Platform — Test Environment</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --surface2: #181c24;
+    --border: #1e2330;
+    --accent: #3b82f6;
+    --accent2: #6366f1;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --text: #e2e8f0;
+    --text2: #94a3b8;
+    --text3: #475569;
+    --verified: #3b82f6;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    width: 280px;
+    min-width: 280px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 24px 0;
+    position: fixed;
+    height: 100vh;
+    overflow-y: auto;
+    z-index: 10;
+  }
+
+  .logo {
+    padding: 0 24px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo-mark {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 600; color: white;
+    margin-bottom: 10px;
+  }
+
+  .logo-text { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: 0.02em; }
+  .logo-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+  .sidebar-section { padding: 20px 24px 0; }
+  .sidebar-label { font-size: 10px; font-weight: 600; color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 10px; }
+
+  .input-group { margin-bottom: 16px; }
+  .input-label { font-size: 12px; color: var(--text2); margin-bottom: 6px; display: block; }
+
+  input, select, textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    border-radius: 8px;
+    padding: 10px 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 80px; }
+  select option { background: var(--surface2); }
+
+  .btn-primary {
+    width: 100%;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    margin-top: 8px;
+  }
+
+  .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .btn-secondary {
+    width: 100%;
+    background: transparent;
+    color: var(--text2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 8px;
+  }
+
+  .btn-secondary:hover { border-color: var(--accent); color: var(--text); }
+
+  .api-status {
+    margin: 16px 24px 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .api-status.ok { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.2); color: var(--green); }
+  .api-status.error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2); color: var(--red); }
+  .api-status.idle { background: var(--surface2); border: 1px solid var(--border); color: var(--text3); }
+
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+  /* MAIN */
+  .main {
+    margin-left: 280px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .topbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  .role-badge {
+    background: rgba(99,102,241,0.15);
+    border: 1px solid rgba(99,102,241,0.3);
+    color: #818cf8;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .dataset-badge {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text2);
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+  }
+
+  .topbar-right { display: flex; gap: 8px; }
+
+  .content { padding: 32px; flex: 1; }
+
+  /* EMPTY STATE */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    text-align: center;
+    gap: 16px;
+  }
+
+  .empty-icon {
+    width: 64px; height: 64px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+  }
+
+  .empty-title { font-size: 20px; font-weight: 600; color: var(--text); }
+  .empty-sub { font-size: 14px; color: var(--text3); max-width: 360px; line-height: 1.6; }
+
+  /* LOADING */
+  .loading-state {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    gap: 20px;
+  }
+
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text { font-size: 14px; color: var(--text2); }
+  .loading-sub { font-size: 12px; color: var(--text3); }
+
+  /* DASHBOARD */
+  .dashboard { display: none; flex-direction: column; gap: 24px; }
+
+  /* EXECUTIVE SUMMARY */
+  .exec-card {
+    background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(99,102,241,0.08));
+    border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 12px;
+    padding: 24px;
+  }
+
+  .exec-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .exec-title { font-size: 11px; font-weight: 600; color: var(--accent); letter-spacing: 0.08em; text-transform: uppercase; }
+  .exec-role { font-size: 11px; color: var(--text3); }
+
+  .exec-sentences { display: flex; flex-direction: column; gap: 10px; }
+
+  .exec-sentence {
+    display: flex; align-items: flex-start; gap: 12px;
+    font-size: 14px; color: var(--text); line-height: 1.6;
+  }
+
+  .exec-num {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: rgba(99,102,241,0.2);
+    color: #818cf8; font-size: 10px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 2px;
+  }
+
+  /* TRAFFIC LIGHTS */
+  .tl-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+
+  .tl-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .tl-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+
+  .tl-card.green::before { background: var(--green); }
+  .tl-card.amber::before { background: var(--amber); }
+  .tl-card.red::before { background: var(--red); }
+
+  .tl-metric { font-size: 11px; color: var(--text3); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .tl-value { font-size: 22px; font-weight: 600; font-family: 'DM Mono', monospace; color: var(--text); margin-bottom: 4px; }
+  .tl-reason { font-size: 11px; color: var(--text2); }
+
+  .tl-badge {
+    position: absolute; top: 14px; right: 14px;
+    padding: 2px 8px; border-radius: 10px;
+    font-size: 10px; font-weight: 600; letter-spacing: 0.05em;
+  }
+
+  .tl-badge.green { background: rgba(16,185,129,0.15); color: var(--green); }
+  .tl-badge.amber { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .tl-badge.red { background: rgba(239,68,68,0.15); color: var(--red); }
+
+  /* SECTION HEADERS */
+  .section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .section-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .section-sub { font-size: 11px; color: var(--text3); }
+
+  /* STATS TABLE */
+  .stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .stats-table th {
+    text-align: left;
+    padding: 10px 14px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+
+  .stats-table th:first-child { border-radius: 8px 0 0 0; }
+  .stats-table th:last-child { border-radius: 0 8px 0 0; }
+
+  .stats-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text2);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+  }
+
+  .stats-table td:first-child { color: var(--text); font-family: 'DM Sans', sans-serif; font-weight: 500; }
+  .stats-table tr:last-child td { border-bottom: none; }
+  .stats-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+  /* ANOMALIES */
+  .anomaly-item {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+
+  .anomaly-sev {
+    padding: 3px 8px; border-radius: 6px;
+    font-size: 10px; font-weight: 600; flex-shrink: 0;
+  }
+
+  .anomaly-sev.HIGH { background: rgba(239,68,68,0.15); color: var(--red); }
+  .anomaly-sev.MEDIUM { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .anomaly-sev.LOW { background: rgba(148,163,184,0.1); color: var(--text3); }
+
+  .anomaly-text { font-size: 13px; color: var(--text2); line-height: 1.5; }
+
+  /* CHARTS GRID */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+
+  .chart-card.full-width { grid-column: 1 / -1; }
+
+  .chart-header { margin-bottom: 16px; }
+  .chart-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+
+  .chart-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  .sentiment-badge {
+    font-size: 11px; color: var(--text3);
+  }
+
+  .conf-badge {
+    padding: 2px 8px; border-radius: 10px;
+    font-size: 10px; font-weight: 500;
+  }
+
+  .conf-badge.HIGH { background: rgba(16,185,129,0.1); color: var(--green); }
+  .conf-badge.MEDIUM { background: rgba(245,158,11,0.1); color: var(--amber); }
+  .conf-badge.INDICATIVE { background: rgba(148,163,184,0.1); color: var(--text3); }
+
+  .verified-badge {
+    padding: 2px 8px; border-radius: 10px;
+    background: rgba(59,130,246,0.1); color: var(--verified);
+    font-size: 10px; font-weight: 500;
+  }
+
+  .chart-canvas-wrap { position: relative; height: 200px; }
+
+  .chart-caption {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: var(--surface2);
+    border-left: 2px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    font-size: 12px;
+    color: var(--text2);
+    line-height: 1.5;
+  }
+
+  /* RECOMMENDATIONS */
+  .rec-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 10px;
+    display: flex; gap: 16px;
+  }
+
+  .rec-priority {
+    width: 28px; height: 28px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; flex-shrink: 0;
+  }
+
+  .rec-priority.p1 { background: rgba(239,68,68,0.15); color: var(--red); }
+  .rec-priority.p2 { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .rec-priority.p3 { background: rgba(16,185,129,0.15); color: var(--green); }
+
+  .rec-action { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .rec-rationale { font-size: 12px; color: var(--text3); margin-bottom: 6px; }
+  .rec-meta { display: flex; gap: 8px; }
+
+  .rec-tag {
+    padding: 2px 8px; border-radius: 6px;
+    background: var(--surface2); border: 1px solid var(--border);
+    font-size: 10px; color: var(--text3);
+  }
+
+  /* NARRATIVE */
+  .narrative-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+
+  .narrative-text {
+    font-size: 14px;
+    color: var(--text2);
+    line-height: 1.8;
+  }
+
+  .narrative-text p { margin-bottom: 14px; }
+  .narrative-text p:last-child { margin-bottom: 0; }
+
+  /* EVAL */
+  .eval-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+  }
+
+  .eval-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+  }
+
+  .eval-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  .eval-value { font-size: 14px; font-weight: 600; color: var(--text); font-family: 'DM Mono', monospace; }
+
+  .eval-bar {
+    height: 3px; background: var(--border);
+    border-radius: 2px; margin-top: 8px; overflow: hidden;
+  }
+
+  .eval-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+
+  /* CARD WRAPPER */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+
+  /* ERROR */
+  .error-card {
+    background: rgba(239,68,68,0.05);
+    border: 1px solid rgba(239,68,68,0.2);
+    border-radius: 10px;
+    padding: 16px;
+    font-size: 13px;
+    color: #fca5a5;
+  }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="logo">
+    <div class="logo-mark">AI</div>
+    <div class="logo-text">Intelligence Platform</div>
+    <div class="logo-sub">Test Environment v1.0</div>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-label">API Configuration</div>
+    <div class="input-group">
+      <label class="input-label">OpenAI API Key</label>
+      <input type="password" id="apiKey" placeholder="sk-..." />
+    </div>
+    <button class="btn-secondary" onclick="validateKey()">Validate Key</button>
+    <div id="apiStatus" class="api-status idle">
+      <div class="dot"></div>
+      <span>Not validated</span>
+    </div>
+  </div>
+
+  <div class="sidebar-section" style="margin-top:20px;">
+    <div class="sidebar-label">Dataset</div>
+    <div class="input-group">
+      <label class="input-label">Paste CSV data</label>
+      <textarea id="csvData" placeholder="Paste CSV rows here..." style="min-height:120px;">Date,Region,Store,Product,Category,Sales,Target,Units Sold,Returns,Customer Count,Margin %
+2024-01-01,North,Store A,Widget X,Electronics,12000,15000,120,5,98,18
+2024-01-01,South,Store B,Widget X,Electronics,18000,15000,175,3,140,22
+2024-01-01,East,Store C,Widget Y,Clothing,8000,10000,200,12,180,35
+2024-01-01,West,Store D,Widget Z,Food,5000,5000,300,2,290,12
+2024-02-01,North,Store A,Widget X,Electronics,9000,15000,90,8,75,16
+2024-02-01,South,Store B,Widget X,Electronics,19000,15000,185,2,150,23
+2024-02-01,East,Store C,Widget Y,Clothing,7500,10000,190,15,170,33
+2024-02-01,West,Store D,Widget Z,Food,5200,5000,310,1,300,13
+2024-03-01,North,Store A,Widget X,Electronics,7000,15000,70,10,60,14
+2024-03-01,South,Store B,Widget X,Electronics,21000,15000,200,1,165,24
+2024-03-01,East,Store C,Widget Y,Clothing,9000,10000,220,8,200,36
+2024-03-01,West,Store D,Widget Z,Food,4800,5000,290,3,280,11</textarea>
+    </div>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-label">Role</div>
+    <div class="input-group">
+      <label class="input-label">Your role</label>
+      <input type="text" id="roleInput" placeholder="e.g. CFO, Store Manager..." value="CFO" />
+    </div>
+    <div class="input-group">
+      <label class="input-label">Model</label>
+      <select id="modelSelect">
+        <option value="gpt-4o-mini">GPT-4o-mini (testing)</option>
+        <option value="gpt-4o">GPT-4o (demo)</option>
+      </select>
+    </div>
+    <button class="btn-primary" id="analyseBtn" onclick="runAnalysis()">Run Analysis</button>
+    <button class="btn-secondary" onclick="switchRole()">Switch Role</button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-left">
+      <span style="font-size:13px;font-weight:600;color:var(--text2);">Dashboard</span>
+      <span id="roleBadge" class="role-badge" style="display:none"></span>
+      <span id="datasetBadge" class="dataset-badge" style="display:none">Retail Sample Dataset</span>
+    </div>
+    <div class="topbar-right">
+      <span id="sessionInfo" style="font-size:11px;color:var(--text3);align-self:center;"></span>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- EMPTY STATE -->
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">📊</div>
+      <div class="empty-title">Ready to Analyse</div>
+      <div class="empty-sub">Enter your API key, paste your dataset, type your role, and click Run Analysis to generate a role-specific AI dashboard.</div>
+    </div>
+
+    <!-- LOADING -->
+    <div class="loading-state" id="loadingState">
+      <div class="spinner"></div>
+      <div class="loading-text">Generating analysis...</div>
+      <div class="loading-sub" id="loadingStep">Reading dataset structure</div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div class="dashboard" id="dashboard">
+
+      <!-- EXEC SUMMARY -->
+      <div class="exec-card" id="execCard">
+        <div class="exec-header">
+          <span class="exec-title">Executive Summary</span>
+          <span class="exec-role" id="execRole"></span>
+        </div>
+        <div class="exec-sentences" id="execSentences"></div>
+      </div>
+
+      <!-- TRAFFIC LIGHTS -->
+      <div>
+        <div class="section-header">
+          <span class="section-title">Key Metrics</span>
+          <span class="section-sub" id="tlSub"></span>
+        </div>
+        <div class="tl-grid" id="tlGrid"></div>
+      </div>
+
+      <!-- STATS -->
+      <div class="card">
+        <div class="section-header">
+          <span class="section-title">Statistical Summary</span>
+          <span class="section-sub">Pre-computed · All numeric columns</span>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="stats-table" id="statsTable"></table>
+        </div>
+      </div>
+
+      <!-- ANOMALIES -->
+      <div id="anomalySection">
+        <div class="section-header">
+          <span class="section-title">Anomaly Alerts</span>
+          <span class="section-sub" id="anomalySub"></span>
+        </div>
+        <div id="anomalyList"></div>
+      </div>
+
+      <!-- CHARTS -->
+      <div>
+        <div class="section-header">
+          <span class="section-title">AI-Generated Charts</span>
+          <span class="section-sub">Selected dynamically for your role</span>
+        </div>
+        <div class="charts-grid" id="chartsGrid"></div>
+      </div>
+
+      <!-- RECOMMENDATIONS -->
+      <div>
+        <div class="section-header">
+          <span class="section-title">Recommendations</span>
+          <span class="section-sub" id="recSub"></span>
+        </div>
+        <div id="recList"></div>
+      </div>
+
+      <!-- NARRATIVE -->
+      <div>
+        <div class="section-header">
+          <span class="section-title">Narrative Report</span>
+          <span class="section-sub">Role-appropriate business document</span>
+        </div>
+        <div class="narrative-card">
+          <div class="narrative-text" id="narrativeText"></div>
+        </div>
+      </div>
+
+      <!-- EVAL -->
+      <div>
+        <div class="section-header">
+          <span class="section-title">Evaluation Metadata</span>
+          <span class="section-sub">Quality assurance · 6 methods</span>
+        </div>
+        <div class="eval-grid" id="evalGrid"></div>
+      </div>
+
+    </div><!-- end dashboard -->
+  </div><!-- end content -->
+</div><!-- end main -->
+
+<script>
+const SYSTEM_PROMPT = `You are a specialist BI analyst. You receive a dataset and a role. You produce a complete, accurate, role-specific business analysis. No conversation. No opinions. Data only.
+
+CORE LAW: Never template. Never pre-decide. Every analysis generated fresh from this data and this role. Same dataset + different role = genuinely different analysis. Fact may repeat. Framing, language, and action must always differ.
+
+ABSOLUTE LIMITS: Max 5 insights. Min 3. Max 5 charts. Min 1. Max 6 traffic lights. Min 3. Max 5 recommendations. Min 3. All values pre-computed. All numbers cross-validated. Confidence on every insight. Session boundary absolute. No external knowledge. PII never in output. Never investment/legal/medical advice. Never name individuals. Never correlation as causation. Never uncertain findings as facts. Never fabricate.
+
+CONFIDENCE: HIGH=100+ rows consistent pattern. MEDIUM=30-99 rows directional. INDICATIVE=below 30 rows. Lowest confidence governs CONFIDENCE_OVERALL.
+
+ROLE LEVELS: L1 EXECUTIVE=CEO,CFO,COO,MD,Board. Max 20w. Strategic headlines. L2 SENIOR=Directors,VPs,Heads. Max 25w. Performance+variance. L3 MID=Store/Team/Branch Managers. Max 30w. Plain English actions. L4F=Frontline supervisors. Max 15w. Number+action. L4A=Analysts,Scientists. Full stats technical.
+
+TRAFFIC LIGHTS: Green=within 5% of target. Amber=5-15% below. Red=>15% below or 3σ+ anomaly.
+INSIGHT RANK: P1 Critical Risk > P2 Significant Variance > P3 Emerging Trend > P4 Positive > P5 Opportunity.
+QUALITY: Cross-validate all numbers. Remove unverifiable claims. Find one positive always.
+
+OUTPUT: Return ONLY valid JSON matching this exact schema. No markdown. No explanation. No extra text.
+
+{
+  "role_interpreted": "string",
+  "level": "L1|L2|L3|L4F|L4A",
+  "executive_summary": {
+    "sentence_1": "string",
+    "sentence_2": "string", 
+    "sentence_3": "string"
+  },
+  "traffic_lights": [
+    {"metric": "string", "status": "GREEN|AMBER|RED|UNRATED", "value": "string", "reason": "string"}
+  ],
+  "statistical_summary": [
+    {"metric": "string", "mean": "string", "median": "string", "std_dev": "string", "min": "string", "max": "string", "outliers": "string"}
+  ],
+  "anomalies": [
+    {"id": "A1", "severity": "HIGH|MEDIUM|LOW", "description": "string", "metric": "string"}
+  ],
+  "charts": [
+    {"type": "bar|line|pie|kpi|waterfall|ranked_list|pareto", "title": "string", "x_field": "string", "y_field": "string", "caption": "string", "sentiment": "POSITIVE|NEGATIVE|NEUTRAL|URGENT", "confidence": "HIGH|MEDIUM|INDICATIVE", "verified": true}
+  ],
+  "recommendations": [
+    {"id": "R1", "priority": 1, "action": "string", "rationale": "string", "owner": "string", "timeframe": "IMMEDIATE|SHORT_TERM|STRATEGIC"}
+  ],
+  "narrative": {
+    "opening": "string",
+    "body": ["string"],
+    "close": "string"
+  },
+  "evaluation": {
+    "relevance_score": 8,
+    "accuracy_validated": "YES|PARTIAL|NO",
+    "coverage": "string",
+    "confidence_overall": "HIGH|MEDIUM|INDICATIVE",
+    "bias_check": "BALANCED|IMBALANCED|NOT_APPLICABLE",
+    "bias_detail": "string",
+    "evaluation_status": "COMPLETE|PARTIAL|FAILED"
+  }
+}`;
+
+let sessionCount = 0;
+let charts = [];
+
+async function validateKey() {
+  const key = document.getElementById('apiKey').value.trim();
+  const status = document.getElementById('apiStatus');
+  if (!key) { showStatus('idle', 'Enter your API key first'); return; }
+  showStatus('idle', 'Validating...');
+  try {
+    const r = await fetch('https://api.openai.com/v1/models', {
+      headers: { 'Authorization': `Bearer ${key}` }
+    });
+    if (r.ok) showStatus('ok', 'API key valid — ready');
+    else showStatus('error', 'Invalid API key');
+  } catch { showStatus('error', 'Connection failed'); }
+}
+
+function showStatus(type, msg) {
+  const el = document.getElementById('apiStatus');
+  el.className = `api-status ${type}`;
+  el.innerHTML = `<div class="dot"></div><span>${msg}</span>`;
+}
+
+async function runAnalysis() {
+  const key = document.getElementById('apiKey').value.trim();
+  const csv = document.getElementById('csvData').value.trim();
+  const role = document.getElementById('roleInput').value.trim();
+  const model = document.getElementById('modelSelect').value;
+
+  if (!key) { alert('Please enter your API key first.'); return; }
+  if (!csv) { alert('Please paste your CSV data.'); return; }
+  if (!role) { alert('Please enter your role.'); return; }
+  if (sessionCount >= 20) { alert('Session limit reached. Refresh to start a new session.'); return; }
+
+  sessionCount++;
+  document.getElementById('sessionInfo').textContent = `Session analyses: ${sessionCount}/20`;
+
+  setState('loading');
+  destroyCharts();
+
+  const steps = ['Reading dataset structure...','Pre-computing statistics...','Building role profile...','Generating insights...','Selecting charts...','Running quality gates...'];
+  let si = 0;
+  const stepInterval = setInterval(() => {
+    document.getElementById('loadingStep').textContent = steps[si % steps.length];
+    si++;
+  }, 1200);
+
+  try {
+    const userMsg = `Dataset (CSV):\n${csv}\n\nRole: ${role}\n\nReturn only the JSON object. No markdown fences. No explanation.`;
+    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        max_tokens: 2500,
+        temperature: 0.3,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: userMsg }
+        ]
+      })
+    });
+
+    clearInterval(stepInterval);
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.error?.message || 'API error');
+    }
+
+    const data = await resp.json();
+    let raw = data.choices[0].message.content.trim();
+    raw = raw.replace(/```json|```/g, '').trim();
+    const result = JSON.parse(raw);
+    renderDashboard(result, role, csv);
+
+  } catch (e) {
+    clearInterval(stepInterval);
+    setState('error', e.message);
+  }
+}
+
+function renderDashboard(d, role, csv) {
+  // Topbar
+  document.getElementById('roleBadge').textContent = d.role_interpreted || role;
+  document.getElementById('roleBadge').style.display = 'inline-block';
+  document.getElementById('datasetBadge').style.display = 'inline-block';
+
+  // Exec summary
+  document.getElementById('execRole').textContent = `${d.level} · ${d.role_interpreted}`;
+  const es = document.getElementById('execSentences');
+  es.innerHTML = '';
+  [d.executive_summary.sentence_1, d.executive_summary.sentence_2, d.executive_summary.sentence_3].forEach((s, i) => {
+    es.innerHTML += `<div class="exec-sentence"><div class="exec-num">${i+1}</div><span>${s}</span></div>`;
+  });
+
+  // Traffic lights
+  const tlGrid = document.getElementById('tlGrid');
+  tlGrid.innerHTML = '';
+  document.getElementById('tlSub').textContent = `${d.traffic_lights.length} metrics monitored`;
+  d.traffic_lights.forEach(tl => {
+    const cls = tl.status.toLowerCase();
+    tlGrid.innerHTML += `
+      <div class="tl-card ${cls}">
+        <div class="tl-metric">${tl.metric}</div>
+        <div class="tl-value">${tl.value}</div>
+        <div class="tl-reason">${tl.reason}</div>
+        <span class="tl-badge ${cls}">${tl.status}</span>
+      </div>`;
+  });
+
+  // Stats table
+  const st = document.getElementById('statsTable');
+  st.innerHTML = `<thead><tr>
+    <th>Metric</th><th>Mean</th><th>Median</th><th>Std Dev</th><th>Min</th><th>Max</th><th>Outliers</th>
+  </tr></thead><tbody>${d.statistical_summary.map(r =>
+    `<tr><td>${r.metric}</td><td>${r.mean}</td><td>${r.median}</td><td>${r.std_dev}</td><td>${r.min}</td><td>${r.max}</td><td>${r.outliers}</td></tr>`
+  ).join('')}</tbody>`;
+
+  // Anomalies
+  const al = document.getElementById('anomalyList');
+  al.innerHTML = '';
+  document.getElementById('anomalySub').textContent = d.anomalies.length ? `${d.anomalies.length} detected` : 'None detected';
+  if (d.anomalies.length === 0) {
+    al.innerHTML = '<div class="anomaly-item"><span class="anomaly-text" style="color:var(--green)">✓ No anomalies detected in this dataset.</span></div>';
+  } else {
+    d.anomalies.forEach(a => {
+      al.innerHTML += `<div class="anomaly-item">
+        <span class="anomaly-sev ${a.severity}">${a.severity}</span>
+        <span class="anomaly-text">${a.description} <span style="color:var(--text3);font-size:11px;">· ${a.metric}</span></span>
+      </div>`;
+    });
+  }
+
+  // Charts
+  const cg = document.getElementById('chartsGrid');
+  cg.innerHTML = '';
+  d.charts.forEach((ch, i) => {
+    const sentIcon = {POSITIVE:'📈',NEGATIVE:'📉',NEUTRAL:'➡️',URGENT:'⚡'}[ch.sentiment] || '➡️';
+    const isFirst = i === 0;
+    const cardId = `chartCard${i}`;
+    cg.innerHTML += `
+      <div class="chart-card ${isFirst ? 'full-width' : ''}" id="${cardId}">
+        <div class="chart-header">
+          <div class="chart-title">${ch.title}</div>
+          <div class="chart-meta">
+            <span class="sentiment-badge">${sentIcon} ${ch.sentiment}</span>
+            <span class="conf-badge ${ch.confidence}">${ch.confidence}</span>
+            ${ch.verified ? '<span class="verified-badge">✓ Verified</span>' : ''}
+          </div>
+        </div>
+        <div class="chart-canvas-wrap"><canvas id="canvas${i}"></canvas></div>
+        <div class="chart-caption">${ch.caption}</div>
+      </div>`;
+  });
+
+  // Render charts after DOM update
+  setTimeout(() => {
+    d.charts.forEach((ch, i) => renderChart(ch, i, csv));
+  }, 100);
+
+  // Recommendations
+  const rl = document.getElementById('recList');
+  rl.innerHTML = '';
+  document.getElementById('recSub').textContent = `${d.recommendations.length} actions identified`;
+  d.recommendations.forEach(r => {
+    const pc = ['p1','p2','p3'][r.priority-1] || 'p3';
+    const tfColor = {IMMEDIATE:'var(--red)',SHORT_TERM:'var(--amber)',STRATEGIC:'var(--green)'}[r.timeframe];
+    rl.innerHTML += `
+      <div class="rec-item">
+        <div class="rec-priority ${pc}">${r.priority}</div>
+        <div>
+          <div class="rec-action">${r.action}</div>
+          <div class="rec-rationale">${r.rationale}</div>
+          <div class="rec-meta">
+            <span class="rec-tag">${r.owner}</span>
+            <span class="rec-tag" style="color:${tfColor}">${r.timeframe}</span>
+          </div>
+        </div>
+      </div>`;
+  });
+
+  // Narrative
+  const nt = document.getElementById('narrativeText');
+  let narr = `<p>${d.narrative.opening}</p>`;
+  if (d.narrative.body) d.narrative.body.forEach(p => { narr += `<p>${p}</p>`; });
+  narr += `<p>${d.narrative.close}</p>`;
+  nt.innerHTML = narr;
+
+  // Evaluation
+  const eg = document.getElementById('evalGrid');
+  const ev = d.evaluation;
+  const score = ev.relevance_score || 0;
+  eg.innerHTML = `
+    <div class="eval-item">
+      <div class="eval-label">Relevance Score</div>
+      <div class="eval-value">${score}/10</div>
+      <div class="eval-bar"><div class="eval-fill" style="width:${score*10}%"></div></div>
+    </div>
+    <div class="eval-item">
+      <div class="eval-label">Accuracy</div>
+      <div class="eval-value" style="font-size:12px;">${ev.accuracy_validated}</div>
+    </div>
+    <div class="eval-item">
+      <div class="eval-label">Coverage</div>
+      <div class="eval-value" style="font-size:12px;">${ev.coverage}</div>
+    </div>
+    <div class="eval-item">
+      <div class="eval-label">Confidence</div>
+      <div class="eval-value" style="font-size:12px;">${ev.confidence_overall}</div>
+    </div>
+    <div class="eval-item">
+      <div class="eval-label">Bias Check</div>
+      <div class="eval-value" style="font-size:12px;">${ev.bias_check}</div>
+    </div>
+    <div class="eval-item">
+      <div class="eval-label">Status</div>
+      <div class="eval-value" style="font-size:12px;color:${ev.evaluation_status==='COMPLETE'?'var(--green)':'var(--amber)'};">${ev.evaluation_status}</div>
+    </div>`;
+
+  setState('dashboard');
+}
+
+function renderChart(ch, i, csv) {
+  const canvas = document.getElementById(`canvas${i}`);
+  if (!canvas) return;
+
+  const rows = csv.trim().split('\n');
+  const headers = rows[0].split(',');
+  const data = rows.slice(1).map(r => r.split(','));
+
+  const colors = ['#3b82f6','#10b981','#f59e0b','#ef4444','#6366f1','#8b5cf6','#06b6d4'];
+  const chartColors = colors.map(c => c);
+
+  let labels = [], values = [], values2 = [];
+
+  // Extract data based on field names
+  const xIdx = headers.findIndex(h => h.toLowerCase().includes(ch.x_field?.toLowerCase()) || ch.x_field?.toLowerCase().includes(h.toLowerCase()));
+  const yIdx = headers.findIndex(h => h.toLowerCase().includes(ch.y_field?.toLowerCase()) || ch.y_field?.toLowerCase().includes(h.toLowerCase()));
+
+  if (ch.type === 'kpi') {
+    // KPI card — no canvas needed, replace with KPI display
+    const wrap = canvas.parentElement;
+    const yVals = data.map(r => parseFloat(r[yIdx] || 0)).filter(v => !isNaN(v));
+    const total = yVals.reduce((a,b) => a+b, 0);
+    wrap.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:8px;">
+      <div style="font-size:42px;font-weight:700;font-family:'DM Mono',monospace;color:var(--text);">${total.toLocaleString()}</div>
+      <div style="font-size:12px;color:var(--text3);">${ch.y_field}</div>
+    </div>`;
+    return;
+  }
+
+  // Group by x_field
+  const grouped = {};
+  data.forEach(row => {
+    const xVal = row[xIdx] || 'Unknown';
+    const yVal = parseFloat(row[yIdx]) || 0;
+    if (!grouped[xVal]) grouped[xVal] = 0;
+    grouped[xVal] += yVal;
+  });
+
+  labels = Object.keys(grouped).slice(0, 8);
+  values = labels.map(l => grouped[l]);
+
+  // Also try to get target if available
+  const targetIdx = headers.findIndex(h => h.toLowerCase().includes('target'));
+  if (targetIdx !== -1) {
+    const grouped2 = {};
+    data.forEach(row => {
+      const xVal = row[xIdx] || 'Unknown';
+      const yVal = parseFloat(row[targetIdx]) || 0;
+      if (!grouped2[xVal]) grouped2[xVal] = 0;
+      grouped2[xVal] += yVal;
+    });
+    values2 = labels.map(l => grouped2[l]);
+  }
+
+  const ctx = canvas.getContext('2d');
+  Chart.defaults.color = '#94a3b8';
+  Chart.defaults.borderColor = '#1e2330';
+
+  let config;
+
+  if (ch.type === 'line') {
+    config = {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: ch.y_field,
+          data: values,
+          borderColor: chartColors[0],
+          backgroundColor: chartColors[0] + '20',
+          fill: true,
+          tension: 0.4,
+          pointBackgroundColor: chartColors[0],
+          pointRadius: 4
+        }]
+      }
+    };
+    if (values2.length) config.data.datasets.push({
+      label: 'Target',
+      data: values2,
+      borderColor: chartColors[2],
+      borderDash: [5,5],
+      fill: false,
+      tension: 0.4,
+      pointRadius: 3
+    });
+  } else if (ch.type === 'pie') {
+    config = {
+      type: 'pie',
+      data: {
+        labels,
+        datasets: [{ data: values, backgroundColor: chartColors }]
+      }
+    };
+  } else if (ch.type === 'pareto' || ch.type === 'ranked_list') {
+    const sorted = labels.map((l,i) => ({l,v:values[i]})).sort((a,b) => b.v-a.v);
+    labels = sorted.map(s => s.l);
+    values = sorted.map(s => s.v);
+    config = {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: ch.y_field,
+          data: values,
+          backgroundColor: values.map((_,i) => i===0 ? chartColors[0] : chartColors[0]+'80'),
+          borderRadius: 4
+        }]
+      }
+    };
+  } else {
+    // Default bar
+    config = {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: ch.y_field,
+          data: values,
+          backgroundColor: chartColors[0] + 'cc',
+          borderColor: chartColors[0],
+          borderWidth: 1,
+          borderRadius: 4
+        }]
+      }
+    };
+    if (values2.length) config.data.datasets.push({
+      label: 'Target',
+      data: values2,
+      backgroundColor: chartColors[2] + '40',
+      borderColor: chartColors[2],
+      borderWidth: 1,
+      borderRadius: 4
+    });
+  }
+
+  config.options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: config.data.datasets?.length > 1, position: 'top', labels: { font: { size: 11, family: 'DM Sans' }, padding: 12 } },
+      tooltip: { backgroundColor: '#181c24', borderColor: '#1e2330', borderWidth: 1, titleFont: { family: 'DM Sans' }, bodyFont: { family: 'DM Mono', size: 12 } }
+    },
+    scales: ch.type === 'pie' ? {} : {
+      x: { grid: { color: '#1e2330' }, ticks: { font: { size: 11, family: 'DM Sans' } } },
+      y: { grid: { color: '#1e2330' }, ticks: { font: { size: 11, family: 'DM Mono' } } }
+    }
+  };
+
+  const chartObj = new Chart(ctx, config);
+  charts.push(chartObj);
+}
+
+function destroyCharts() {
+  charts.forEach(c => c.destroy());
+  charts = [];
+}
+
+function setState(state, errMsg) {
+  document.getElementById('emptyState').style.display = state === 'empty' ? 'flex' : 'none';
+  document.getElementById('loadingState').style.display = state === 'loading' ? 'flex' : 'none';
+  document.getElementById('dashboard').style.display = state === 'dashboard' ? 'flex' : 'none';
+
+  if (state === 'error') {
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'none';
+    document.getElementById('emptyState').style.display = 'flex';
+    document.getElementById('emptyState').innerHTML = `
+      <div class="empty-icon">⚠️</div>
+      <div class="empty-title">Analysis Failed</div>
+      <div class="error-card" style="max-width:400px;">${errMsg}</div>
+      <button class="btn-secondary" style="max-width:200px;" onclick="resetEmpty()">Try Again</button>`;
+  }
+}
+
+function resetEmpty() {
+  document.getElementById('emptyState').innerHTML = `
+    <div class="empty-icon">📊</div>
+    <div class="empty-title">Ready to Analyse</div>
+    <div class="empty-sub">Enter your API key, paste your dataset, type your role, and click Run Analysis.</div>`;
+  setState('empty');
+}
+
+function switchRole() {
+  const role = document.getElementById('roleInput').value.trim();
+  if (!role) { document.getElementById('roleInput').focus(); return; }
+  runAnalysis();
+}
+
+// Init
+setState('empty');
+</script>
+</body>
+</html>
