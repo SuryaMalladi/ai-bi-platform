@@ -200,6 +200,7 @@ def render_file_upload_section():
         st.rerun()
 
 
+@st.cache_data(show_spinner=False)
 def parse_uploaded_file(uploaded_file):
     try:
         file_name = uploaded_file.name.lower()
@@ -267,6 +268,7 @@ def render_continue_button():
             st.rerun()
 
 
+@st.cache_data(show_spinner=False)
 def run_data_quality_scan(df):
     report = {}
     report["row_count"] = len(df)
