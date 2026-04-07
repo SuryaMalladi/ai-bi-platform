@@ -1,12 +1,13 @@
 """
 AI-Powered Data Analysis & Intelligence Platform
-Phase 3, Step 3 — Data Source Selection
+Phase 3, Step 4 — Data Quality Report
 Author: Surya (built with Claude AI)
 """
 
 import streamlit as st
 import pandas as pd
 import io
+import re
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIGURATION
@@ -423,6 +424,12 @@ def init_session_state():
         # Counts how many analyses have been run this session.
         # Maximum allowed: 20 (our rate limit from the PRD).
         "analysis_count": 0,
+
+        # ── Quality report ────────────────────────────────────────────────────
+        # Stores the result of the data quality scan so it does not re-run
+        # every time the user interacts with the page.
+        # Set to None until the scan has been run.
+        "quality_acknowledged": False,
     }
 
     # Loop through every default and set it if not already in session state
@@ -1000,50 +1007,580 @@ def render_continue_button():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SCREEN 4 PLACEHOLDER — DATA QUALITY REPORT
-# This screen is built in Phase 3, Step 4.
-# For now we show a clear placeholder so the navigation works end-to-end.
+# DATA QUALITY ENGINE
+# This is the brain behind the Data Quality Report.
+# It scans the dataframe and returns a structured dictionary of findings.
+# It never modifies the data — it only reads and reports.
 # ─────────────────────────────────────────────────────────────────────────────
 
-def screen_quality_placeholder():
+def run_data_quality_scan(df: pd.DataFrame) -> dict:
     """
-    Temporary placeholder for the Data Quality Report screen.
-    Will be fully built in Phase 3, Step 4.
+    Scans a dataframe and returns a complete quality report as a dictionary.
+    Every finding is computed here — the screen function just displays results.
+
+    Returns a dictionary with these keys:
+      row_count, col_count, missing, duplicates, type_issues,
+      date_issues, pii_findings, analysis_ready_cols, quality_score
+    """
+
+    report = {}
+
+    # ── 1. Basic counts ───────────────────────────────────────────────────────
+    report["row_count"] = len(df)
+    report["col_count"] = len(df.columns)
+
+    # ── 2. Missing values ─────────────────────────────────────────────────────
+    # For every column, count how many cells are empty (NaN = Not a Number,
+    # which is Python's way of representing a blank/missing cell)
+    missing_counts = df.isnull().sum()
+
+    # Build a list of only the columns that actually have missing values
+    # Each entry is a dict with the column name, count, and percentage
+    missing_list = []
+    for col in df.columns:
+        count = int(missing_counts[col])
+        if count > 0:
+            pct = round((count / len(df)) * 100, 1)
+            missing_list.append({
+                "column": col,
+                "count": count,
+                "pct": pct,
+                # Severity: high if more than 20% missing, medium if 5-20%, low otherwise
+                "severity": "HIGH" if pct > 20 else ("MEDIUM" if pct > 5 else "LOW")
+            })
+
+    report["missing"] = missing_list
+    report["total_missing_cells"] = int(missing_counts.sum())
+
+    # ── 3. Duplicate rows ─────────────────────────────────────────────────────
+    # A duplicate row is one where every single column value is identical
+    # to another row already in the dataset
+    duplicate_count = int(df.duplicated().sum())
+    report["duplicates"] = {
+        "count": duplicate_count,
+        "pct": round((duplicate_count / len(df)) * 100, 1) if len(df) > 0 else 0
+    }
+
+    # ── 4. Data type issues ───────────────────────────────────────────────────
+    # A type issue is when a column contains mixed data — e.g. some rows have
+    # numbers and other rows have text in the same column.
+    # This confuses the AI and must be flagged.
+    type_issues = []
+    for col in df.columns:
+        # Only check columns that pandas read as "object" (mixed/text type)
+        if df[col].dtype == object:
+            # Try to convert the column to numbers
+            # errors="coerce" means failed conversions become NaN instead of crashing
+            numeric_attempt = pd.to_numeric(df[col], errors="coerce")
+            numeric_count = numeric_attempt.notna().sum()
+            non_numeric_count = numeric_attempt.isna().sum() - df[col].isna().sum()
+
+            # If some rows converted to numbers and some did not — it is mixed
+            if numeric_count > 0 and non_numeric_count > 0:
+                type_issues.append({
+                    "column": col,
+                    "detail": f"{numeric_count} numeric values mixed with {non_numeric_count} text values"
+                })
+
+    report["type_issues"] = type_issues
+
+    # ── 5. Date format inconsistencies ───────────────────────────────────────
+    # Checks columns that look like they contain dates but have
+    # inconsistent formatting (e.g. some rows say "2024-01-15" and
+    # others say "15/01/2024" in the same column)
+    date_issues = []
+    for col in df.columns:
+        if df[col].dtype == object:
+            # Sample up to 50 non-null values for speed
+            sample = df[col].dropna().head(50)
+
+            # Common date patterns to detect
+            date_patterns = [
+                r"\d{4}-\d{2}-\d{2}",       # 2024-01-15
+                r"\d{2}/\d{2}/\d{4}",        # 15/01/2024 or 01/15/2024
+                r"\d{2}-\d{2}-\d{4}",        # 15-01-2024
+                r"\d{1,2}\s\w+\s\d{4}",      # 15 January 2024
+            ]
+
+            # Count how many distinct patterns appear in this column
+            patterns_found = set()
+            for val in sample.astype(str):
+                for pattern in date_patterns:
+                    if re.search(pattern, val):
+                        patterns_found.add(pattern)
+
+            # If more than one date pattern exists in the same column — flag it
+            if len(patterns_found) > 1:
+                date_issues.append({
+                    "column": col,
+                    "detail": f"{len(patterns_found)} different date formats detected"
+                })
+
+    report["date_issues"] = date_issues
+
+    # ── 6. PII Detection ──────────────────────────────────────────────────────
+    # PII = Personally Identifiable Information
+    # We scan every text column for patterns that look like personal data.
+    # This is a GDPR requirement — we must warn the user before processing.
+    pii_findings = []
+
+    # Define regex patterns for each PII category
+    # A regex (regular expression) is a pattern-matching formula
+    pii_patterns = {
+        "Email addresses":       r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}",
+        "Phone numbers":         r"(\+?\d[\d\s\-().]{7,}\d)",
+        "Credit card numbers":   r"\b(?:\d[ -]?){13,16}\b",
+        "National ID / SSN":     r"\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b",
+        "UK National Insurance": r"\b[A-Z]{2}\d{6}[A-Z]\b",
+    }
+
+    # Check every text column against every PII pattern
+    for col in df.columns:
+        if df[col].dtype == object:
+            # Convert column values to strings and join into one block of text
+            # We sample up to 100 rows for speed — enough to detect PII reliably
+            sample_text = " ".join(df[col].dropna().head(100).astype(str))
+
+            for pii_type, pattern in pii_patterns.items():
+                matches = re.findall(pattern, sample_text)
+                if matches:
+                    pii_findings.append({
+                        "column": col,
+                        "type": pii_type,
+                        "matches_found": min(len(matches), 3)  # Show max 3 examples
+                    })
+                    break  # One PII type per column is enough to flag it
+
+    report["pii_findings"] = pii_findings
+
+    # ── 7. Analysis-ready column count ───────────────────────────────────────
+    # A column is "analysis-ready" if it has:
+    # - Less than 20% missing values
+    # - No type mixing issues
+    # - Not flagged as PII
+    problem_cols = set(
+        [m["column"] for m in missing_list if m["severity"] == "HIGH"] +
+        [t["column"] for t in type_issues] +
+        [p["column"] for p in pii_findings]
+    )
+    analysis_ready = len(df.columns) - len(problem_cols)
+    report["analysis_ready_cols"] = analysis_ready
+
+    # ── 8. Overall quality score ──────────────────────────────────────────────
+    # A simple 0-100 score summarising dataset health.
+    # We deduct points for each category of issue found.
+    score = 100
+
+    # Deduct for missing values (up to 30 points)
+    missing_pct = (report["total_missing_cells"] / max(df.size, 1)) * 100
+    score -= min(30, int(missing_pct * 3))
+
+    # Deduct for duplicates (up to 20 points)
+    score -= min(20, int(report["duplicates"]["pct"] * 2))
+
+    # Deduct for type issues (5 points each, up to 20)
+    score -= min(20, len(type_issues) * 5)
+
+    # Deduct for PII findings (10 points each, up to 20)
+    score -= min(20, len(pii_findings) * 10)
+
+    # Deduct for date issues (5 points each, up to 10)
+    score -= min(10, len(date_issues) * 5)
+
+    report["quality_score"] = max(0, score)
+
+    return report
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SCREEN 4 — DATA QUALITY REPORT
+# Displays the results of the quality scan in a professional, readable format.
+# The user must click "Proceed" to continue — they cannot skip this screen.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def screen_data_quality():
+    """
+    Renders the full Data Quality Report screen.
+    Runs the quality scan once and stores results in session state
+    so the scan does not re-run every time the user interacts with the page.
     """
     render_topbar("Step 4 — Data Quality Report")
     render_screen_title(
         "🔍",
         "Data Quality Report",
-        "Scanning your dataset for quality issues before analysis begins."
+        "Your dataset has been automatically scanned. Review the findings below before analysis begins."
+    )
+
+    df = st.session_state["dataframe"]
+    file_name = st.session_state["file_name"]
+
+    # ── Run scan once and cache in session state ───────────────────────────────
+    # We only run the scan if we have not run it already for this dataset.
+    # "quality_report" not in session state means it has never been run.
+    if "quality_report" not in st.session_state:
+        with st.spinner("Scanning your dataset for quality issues..."):
+            st.session_state["quality_report"] = run_data_quality_scan(df)
+
+    report = st.session_state["quality_report"]
+
+    # ── Quality score banner ──────────────────────────────────────────────────
+    score = report["quality_score"]
+
+    # Decide colour and label based on score
+    if score >= 80:
+        score_color = "#10b981"   # Green
+        score_label = "Good"
+        score_desc  = "This dataset is in good shape for analysis."
+    elif score >= 55:
+        score_color = "#f59e0b"   # Amber
+        score_label = "Fair"
+        score_desc  = "Some issues were found. Review them below before proceeding."
+    else:
+        score_color = "#ef4444"   # Red
+        score_label = "Poor"
+        score_desc  = "Several issues detected. Consider cleaning the data first."
+
+    st.markdown(f"""
+    <div style="
+        background: #111318;
+        border: 1px solid #1e2330;
+        border-radius: 12px;
+        padding: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 24px;
+    ">
+        <div>
+            <div style="font-size:11px; font-weight:600; color:#475569;
+                        text-transform:uppercase; letter-spacing:0.1em; margin-bottom:6px;">
+                Dataset Quality Score
+            </div>
+            <div style="font-size:13px; color:#94a3b8; margin-bottom:4px;">
+                {file_name} &nbsp;·&nbsp; {report['row_count']:,} rows
+                &nbsp;·&nbsp; {report['col_count']} columns
+            </div>
+            <div style="font-size:13px; color:#94a3b8;">{score_desc}</div>
+        </div>
+        <div style="text-align:center; flex-shrink:0; margin-left:32px;">
+            <div style="font-size:48px; font-weight:700; color:{score_color};
+                        font-family:'DM Mono',monospace; line-height:1;">
+                {score}
+            </div>
+            <div style="font-size:12px; color:{score_color}; font-weight:600;
+                        margin-top:4px;">
+                {score_label}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Four summary metric tiles ─────────────────────────────────────────────
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        st.metric(
+            "Missing Cells",
+            f"{report['total_missing_cells']:,}",
+            help="Total number of empty cells across all columns"
+        )
+    with m2:
+        st.metric(
+            "Duplicate Rows",
+            f"{report['duplicates']['count']:,}",
+            help="Rows where every column value is identical to another row"
+        )
+    with m3:
+        st.metric(
+            "Type Issues",
+            f"{len(report['type_issues'])}",
+            help="Columns where numbers and text are mixed together"
+        )
+    with m4:
+        st.metric(
+            "PII Detected",
+            f"{len(report['pii_findings'])} column(s)",
+            help="Columns containing personal data (emails, phone numbers, IDs)"
+        )
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    # ── PII Warning — shown first if detected, must be acknowledged ───────────
+    if report["pii_findings"]:
+        st.markdown(f"""
+        <div style="
+            background: rgba(239,68,68,0.08);
+            border: 1px solid rgba(239,68,68,0.3);
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 20px;
+        ">
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+                <span style="font-size:18px;">⚠️</span>
+                <span style="font-size:14px; font-weight:600; color:#ef4444;">
+                    Data Protection Notice — Personal Data Detected
+                </span>
+            </div>
+            <div style="font-size:13px; color:#94a3b8; line-height:1.7; margin-bottom:16px;">
+                This dataset appears to contain personal information in the following columns.
+                Please ensure you have the legal right to process this data and that it
+                complies with your organisation's data protection policy before proceeding.
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                {"".join([
+                    f'<div style="display:flex; align-items:center; gap:10px; '
+                    f'background:#181c24; border:1px solid #2a1f1f; border-radius:8px; '
+                    f'padding:10px 14px;">'
+                    f'<span style="font-size:14px;">🔴</span>'
+                    f'<span style="font-size:13px; color:#e2e8f0; font-weight:500;">'
+                    f'{p["column"]}</span>'
+                    f'<span style="font-size:12px; color:#94a3b8;">— {p["type"]}</span>'
+                    f'</div>'
+                    for p in report["pii_findings"]
+                ])}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Missing Values section ────────────────────────────────────────────────
+    st.markdown("""
+    <div style="font-size:13px; font-weight:600; color:#e2e8f0;
+                margin-bottom:12px; margin-top:8px;">
+        Missing Values
+    </div>
+    """, unsafe_allow_html=True)
+
+    if not report["missing"]:
+        render_success_banner("No missing values detected. All columns are complete.")
+    else:
+        # Build a visual row for each column with missing data
+        for m in report["missing"]:
+            sev_color = {"HIGH": "#ef4444", "MEDIUM": "#f59e0b", "LOW": "#94a3b8"}[m["severity"]]
+            bar_width = min(100, int(m["pct"]))
+
+            st.markdown(f"""
+            <div style="
+                background:#111318; border:1px solid #1e2330;
+                border-radius:10px; padding:14px 18px; margin-bottom:8px;
+            ">
+                <div style="display:flex; justify-content:space-between;
+                            align-items:center; margin-bottom:8px;">
+                    <span style="font-size:13px; color:#e2e8f0; font-weight:500;">
+                        {m["column"]}
+                    </span>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="font-size:12px; color:{sev_color}; font-weight:600;">
+                            {m["severity"]}
+                        </span>
+                        <span style="font-family:'DM Mono',monospace; font-size:12px;
+                                    color:#94a3b8;">
+                            {m["count"]:,} missing ({m["pct"]}%)
+                        </span>
+                    </div>
+                </div>
+                <div style="background:#1e2330; border-radius:4px; height:4px; overflow:hidden;">
+                    <div style="width:{bar_width}%; height:100%;
+                                background:{sev_color}; border-radius:4px;">
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # ── Duplicate rows section ────────────────────────────────────────────────
+    st.markdown("""
+    <div style="font-size:13px; font-weight:600; color:#e2e8f0;
+                margin-bottom:12px; margin-top:16px;">
+        Duplicate Rows
+    </div>
+    """, unsafe_allow_html=True)
+
+    dup = report["duplicates"]
+    if dup["count"] == 0:
+        render_success_banner("No duplicate rows detected.")
+    else:
+        render_warning_banner(
+            f"{dup['count']:,} duplicate rows detected ({dup['pct']}% of dataset). "
+            f"These will be included in analysis but may skew averages and totals."
+        )
+
+    # ── Data type issues section ──────────────────────────────────────────────
+    if report["type_issues"]:
+        st.markdown("""
+        <div style="font-size:13px; font-weight:600; color:#e2e8f0;
+                    margin-bottom:12px; margin-top:16px;">
+            Data Type Issues
+        </div>
+        """, unsafe_allow_html=True)
+
+        for t in report["type_issues"]:
+            render_warning_banner(
+                f"Column '{t['column']}' has mixed data types — {t['detail']}. "
+                f"This column may produce unreliable numeric analysis."
+            )
+
+    # ── Date format issues section ────────────────────────────────────────────
+    if report["date_issues"]:
+        st.markdown("""
+        <div style="font-size:13px; font-weight:600; color:#e2e8f0;
+                    margin-bottom:12px; margin-top:16px;">
+            Date Format Issues
+        </div>
+        """, unsafe_allow_html=True)
+
+        for d in report["date_issues"]:
+            render_warning_banner(
+                f"Column '{d['column']}' — {d['detail']}. "
+                f"Time-series analysis may be affected."
+            )
+
+    # ── Analysis coverage summary ─────────────────────────────────────────────
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    ready = report["analysis_ready_cols"]
+    total = report["col_count"]
+    coverage_pct = int((ready / total) * 100) if total > 0 else 0
+
+    render_card(f"""
+        <div style="display:flex; align-items:center; justify-content:space-between;
+                    margin-bottom:14px;">
+            <div style="font-size:13px; font-weight:600; color:#e2e8f0;">
+                Analysis Coverage
+            </div>
+            <div style="font-family:'DM Mono',monospace; font-size:13px; color:#3b82f6;">
+                {ready} of {total} columns analysis-ready
+            </div>
+        </div>
+        <div style="background:#1e2330; border-radius:6px; height:6px; overflow:hidden;">
+            <div style="width:{coverage_pct}%; height:100%;
+                        background:linear-gradient(90deg,#3b82f6,#6366f1);
+                        border-radius:6px;">
+            </div>
+        </div>
+        <div style="font-size:12px; color:#475569; margin-top:10px;">
+            Columns with high missing values, type issues, or PII detections
+            are excluded from the analysis-ready count.
+        </div>
+    """)
+
+    # ── Recommended actions ───────────────────────────────────────────────────
+    # Build a list of recommendations based on what was found
+    actions = []
+    if report["total_missing_cells"] > 0:
+        high_missing = [m for m in report["missing"] if m["severity"] == "HIGH"]
+        if high_missing:
+            cols_str = ", ".join([m["column"] for m in high_missing[:3]])
+            actions.append(f"Consider filling or removing high-missing columns: {cols_str}")
+    if dup["count"] > 0:
+        actions.append(
+            f"Review and remove {dup['count']:,} duplicate rows before analysis "
+            f"if they are data entry errors"
+        )
+    if report["type_issues"]:
+        actions.append(
+            "Standardise mixed-type columns so numeric columns contain only numbers"
+        )
+    if report["pii_findings"]:
+        actions.append(
+            "Confirm you have the legal right to process personal data, "
+            "or remove PII columns before uploading"
+        )
+
+    if actions:
+        st.markdown("""
+        <div style="font-size:13px; font-weight:600; color:#e2e8f0;
+                    margin-bottom:12px; margin-top:8px;">
+            Recommended Actions
+        </div>
+        """, unsafe_allow_html=True)
+
+        actions_html = "".join([
+            f'<div style="display:flex; gap:10px; align-items:flex-start; '
+            f'margin-bottom:8px;">'
+            f'<span style="color:#f59e0b; flex-shrink:0; margin-top:1px;">→</span>'
+            f'<span style="font-size:13px; color:#94a3b8; line-height:1.6;">{a}</span>'
+            f'</div>'
+            for a in actions
+        ])
+        render_card(actions_html)
+
+    # ── Navigation buttons ────────────────────────────────────────────────────
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    st.markdown("---")
+
+    # Decide the proceed button label based on PII presence
+    if report["pii_findings"]:
+        proceed_label = "I Acknowledge the PII Warning — Proceed to Analysis →"
+    else:
+        proceed_label = "Proceed to Analysis →"
+
+    render_info_banner(
+        "You can proceed with analysis even if issues were found. "
+        "The AI will work with the data as uploaded and flag any limitations it encounters."
+    )
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    col1, col2 = st.columns([2, 3])
+    with col1:
+        if st.button(proceed_label, type="primary"):
+            # Mark quality report as acknowledged and move to the next screen
+            st.session_state["quality_acknowledged"] = True
+            st.session_state["screen"] = "role_input"
+            st.rerun()
+
+    with col2:
+        if st.button("← Back to Data Source", type="secondary"):
+            # Clear the cached quality report so it re-runs if new data is uploaded
+            if "quality_report" in st.session_state:
+                del st.session_state["quality_report"]
+            st.session_state["screen"] = "data"
+            st.rerun()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SCREEN 5 PLACEHOLDER — ROLE INPUT & INDUSTRY DETECTION
+# Built in Phase 3, Step 5. Navigation wired up now so flow works end-to-end.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def screen_role_input_placeholder():
+    """
+    Temporary placeholder for the Role Input and Industry Detection screen.
+    Will be fully built in Phase 3, Step 5.
+    """
+    render_topbar("Step 5 — Role & Industry")
+    render_screen_title(
+        "👤",
+        "Tell Us About Your Role",
+        "The AI tailors every insight specifically to the role you enter."
     )
 
     render_card("""
         <div style="text-align:center; padding:40px 0;">
             <div style="font-size:48px; margin-bottom:16px;">🚧</div>
             <div style="font-size:16px; font-weight:600; color:#e2e8f0; margin-bottom:8px;">
-                Coming in Phase 3, Step 4
+                Coming in Phase 3, Step 5
             </div>
-            <div style="font-size:13px; color:#94a3b8; max-width:400px; margin:0 auto; line-height:1.6;">
-                The Data Quality Report will scan your dataset for missing values,
-                duplicates, PII, inconsistent formats, and more — before any
-                AI analysis begins.
+            <div style="font-size:13px; color:#94a3b8; max-width:420px;
+                        margin:0 auto; line-height:1.6;">
+                Role input, industry auto-detection, and the AI analysis engine
+                are built in the next step.
             </div>
         </div>
     """)
 
     st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
-    # Show a summary of what's loaded
     if st.session_state.get("dataframe") is not None:
         rows = st.session_state["data_rows"]
         cols = st.session_state["data_columns"]
         fname = st.session_state["file_name"]
+        score = st.session_state.get("quality_report", {}).get("quality_score", "—")
         render_success_banner(
-            f"Dataset ready: {fname} — {rows:,} rows · {cols} columns"
+            f"Dataset ready: {fname} — {rows:,} rows · {cols} columns · "
+            f"Quality score: {score}/100"
         )
 
-    if st.button("← Back to Data Source", type="secondary"):
-        st.session_state["screen"] = "data"
+    if st.button("← Back to Data Quality Report", type="secondary"):
+        st.session_state["screen"] = "quality"
         st.rerun()
 
 
@@ -1091,7 +1628,15 @@ def main():
             st.session_state["screen"] = "data"
             st.rerun()
         else:
-            screen_quality_placeholder()
+            screen_data_quality()
+
+    elif current_screen == "role_input":
+        # Safety check: cannot reach role input without acknowledging quality report
+        if not st.session_state.get("quality_acknowledged"):
+            st.session_state["screen"] = "quality"
+            st.rerun()
+        else:
+            screen_role_input_placeholder()
 
     else:
         # Fallback — if screen value is unknown, restart from the beginning
