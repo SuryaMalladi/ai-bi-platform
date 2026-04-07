@@ -150,7 +150,7 @@ def screen_data_source():
         with st.container(border=True):
             st.markdown("### Upload a File")
             st.markdown("- CSV files (.csv)\n- Excel files (.xlsx, .xls)\n- Up to 50MB per file")
-           st.session_state["data_source_type"] = "file"
+            st.session_state["data_source_type"] = "file"
 
     with col_db:
         with st.container(border=True):
