@@ -1,6 +1,6 @@
-streamlit
+streamlit==1.54.0
 openai
 pandas
 openpyxl
 xlrd
-plotly
+plotlystreamlit run app.py
