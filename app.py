@@ -1,4 +1,5 @@
-# app.py — AI Intelligence Platform — Complete with NL Chat Interface
+# app.py — AI Intelligence Platform — Complete Build
+# Welcome page + Streamlit Secrets + Gemini Flash chat + Full dataset chat
 
 import streamlit as st
 import pandas as pd
@@ -15,8 +16,8 @@ from datetime import datetime
 # ============================================================
 
 st.set_page_config(
-    page_title="AI Intelligence Platform",
-    page_icon="📊",
+    page_title="NexusIQ — AI Intelligence Platform",
+    page_icon="◈",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -25,8 +26,26 @@ st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    header {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
+
+
+# ============================================================
+# LOAD API KEYS FROM STREAMLIT SECRETS
+# ============================================================
+
+def load_api_keys():
+    """
+    Loads API keys from Streamlit Secrets.
+    Never shown to users. Never in code.
+    """
+    try:
+        openai_key = st.secrets["OPENAI_API_KEY"]
+        gemini_key = st.secrets["GEMINI_API_KEY"]
+        return openai_key, gemini_key
+    except Exception:
+        return None, None
 
 
 # ============================================================
@@ -35,8 +54,10 @@ st.markdown("""
 
 def init_session_state():
     defaults = {
-        "api_key": None,
-        "api_validated": False,
+        "api_keys_loaded": False,
+        "openai_key": None,
+        "gemini_key": None,
+        "welcome_done": False,
         "privacy_accepted": False,
         "uploaded_df": None,
         "uploaded_filename": None,
@@ -64,6 +85,13 @@ def init_session_state():
         if key not in st.session_state:
             st.session_state[key] = value
 
+    # Load API keys from secrets on first run
+    if not st.session_state.api_keys_loaded:
+        openai_key, gemini_key = load_api_keys()
+        st.session_state.openai_key = openai_key
+        st.session_state.gemini_key = gemini_key
+        st.session_state.api_keys_loaded = True
+
 init_session_state()
 
 
@@ -72,8 +100,8 @@ init_session_state()
 # ============================================================
 
 def get_current_screen():
-    if not st.session_state.api_validated:
-        return "api_key"
+    if not st.session_state.welcome_done:
+        return "welcome"
     if not st.session_state.privacy_accepted:
         return "privacy"
     if st.session_state.uploaded_df is None:
@@ -86,17 +114,17 @@ def get_current_screen():
 
 
 # ============================================================
-# PROGRESS BAR
+# PROGRESS BAR — shown from privacy onwards
 # ============================================================
 
 def show_progress(current_step):
     steps = [
-        "API Setup", "Privacy", "Data Upload",
+        "Privacy", "Data Upload",
         "Quality Check", "Role & Industry", "Dashboard"
     ]
     step_map = {
-        "api_key": 1, "privacy": 2, "data_source": 3,
-        "data_quality": 4, "role_input": 5, "dashboard": 6
+        "privacy": 1, "data_source": 2,
+        "data_quality": 3, "role_input": 4, "dashboard": 5
     }
     current = step_map.get(current_step, 1)
     total = len(steps)
@@ -114,45 +142,190 @@ def show_progress(current_step):
 
 
 # ============================================================
-# SCREEN 1 — API KEY
+# SCREEN 1 — WELCOME PAGE
 # ============================================================
 
-def screen_api_key():
-    st.markdown("## 🔐 Secure Configuration")
-    st.markdown(
-        "Enter your OpenAI API key to begin. "
-        "This key is used only for this session and is never stored anywhere."
-    )
-    st.info(
-        "🔒 Your key is stored only in memory. "
-        "Cleared automatically when you close this tab."
-    )
-    with st.form("api_key_form"):
-        api_key_input = st.text_input(
-            "OpenAI API Key",
-            type="password",
-            placeholder="sk-..."
-        )
-        submitted = st.form_submit_button(
-            "Validate and Continue →",
+def screen_welcome():
+    # Full-page enterprise welcome — no sidebar, no progress bar
+    st.markdown("""
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400&display=swap');
+
+        .welcome-wrap {
+            min-height: 92vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px 20px;
+            background: linear-gradient(160deg, #0a0f1e 0%, #0d1b2a 50%, #0a1628 100%);
+            border-radius: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .welcome-wrap::before {
+            content: '';
+            position: absolute;
+            top: -200px; left: -200px;
+            width: 600px; height: 600px;
+            background: radial-gradient(circle, rgba(59,130,246,0.06) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .welcome-wrap::after {
+            content: '';
+            position: absolute;
+            bottom: -150px; right: -150px;
+            width: 500px; height: 500px;
+            background: radial-gradient(circle, rgba(99,102,241,0.05) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .brand-mark {
+            font-family: 'DM Mono', monospace;
+            font-size: 11px;
+            letter-spacing: 0.35em;
+            color: #3b82f6;
+            text-transform: uppercase;
+            margin-bottom: 48px;
+            opacity: 0.9;
+        }
+
+        .welcome-title {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: clamp(52px, 7vw, 88px);
+            font-weight: 300;
+            color: #f0f4ff;
+            text-align: center;
+            line-height: 1.05;
+            letter-spacing: -0.02em;
+            margin-bottom: 8px;
+        }
+
+        .welcome-title span {
+            color: #3b82f6;
+            font-weight: 600;
+        }
+
+        .welcome-divider {
+            width: 48px;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+            margin: 32px auto;
+        }
+
+        .welcome-tagline {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: clamp(18px, 2.5vw, 24px);
+            font-weight: 300;
+            color: #94a3b8;
+            text-align: center;
+            font-style: italic;
+            letter-spacing: 0.02em;
+            margin-bottom: 48px;
+            max-width: 640px;
+        }
+
+        .welcome-desc {
+            font-family: 'DM Sans', sans-serif;
+            font-size: 15px;
+            font-weight: 300;
+            color: #64748b;
+            text-align: center;
+            line-height: 1.8;
+            max-width: 560px;
+            margin-bottom: 64px;
+        }
+
+        .feature-row {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 64px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .feature-pill {
+            font-family: 'DM Sans', sans-serif;
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #475569;
+            border: 1px solid #1e293b;
+            padding: 8px 18px;
+            border-radius: 100px;
+            background: rgba(255,255,255,0.02);
+        }
+
+        .welcome-cta-wrap {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .version-tag {
+            font-family: 'DM Mono', monospace;
+            font-size: 10px;
+            color: #1e3a5f;
+            letter-spacing: 0.2em;
+            margin-top: 48px;
+            text-transform: uppercase;
+        }
+        </style>
+
+        <div class="welcome-wrap">
+            <div class="brand-mark">◈ &nbsp; Enterprise Intelligence</div>
+
+            <div class="welcome-title">
+                Nexus<span>IQ</span>
+            </div>
+
+            <div class="welcome-divider"></div>
+
+            <div class="welcome-tagline">
+                Every dataset. Every role. Every decision — illuminated.
+            </div>
+
+            <div class="welcome-desc">
+                A production-grade AI platform that reads your data and your role,
+                then generates a complete intelligence briefing built specifically
+                for how you think and what you need to decide.
+            </div>
+
+            <div class="feature-row">
+                <div class="feature-pill">Dynamic Role Intelligence</div>
+                <div class="feature-pill">Zero Templates</div>
+                <div class="feature-pill">Executive to Frontline</div>
+                <div class="feature-pill">Natural Language Query</div>
+                <div class="feature-pill">GDPR Aware</div>
+            </div>
+
+            <div class="version-tag">Phase 1 · Recruiter Demo · v1.0</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # CTA button — native Streamlit, centred
+    col1, col2, col3 = st.columns([2, 1, 2])
+    with col2:
+        if st.button(
+            "Enter Platform →",
+            type="primary",
             use_container_width=True
-        )
-    if submitted:
-        if not api_key_input:
-            st.error("Please enter your API key.")
-        elif not api_key_input.startswith("sk-"):
-            st.error("This does not look like a valid OpenAI key.")
-        else:
-            with st.spinner("Validating..."):
-                try:
-                    client = openai.OpenAI(api_key=api_key_input)
-                    client.models.list()
-                    st.session_state.api_key = api_key_input
-                    st.session_state.api_validated = True
-                    st.success("✅ API key validated.")
-                    st.rerun()
-                except Exception:
-                    st.error("Invalid API key. Please check and try again.")
+        ):
+            # Validate keys exist before proceeding
+            if not st.session_state.openai_key:
+                st.error(
+                    "Platform configuration incomplete. "
+                    "API keys not found in Streamlit Secrets."
+                )
+            else:
+                st.session_state.welcome_done = True
+                st.rerun()
 
 
 # ============================================================
@@ -558,10 +731,12 @@ def build_role_profile(user_role, industry, df):
         "L4F": "What is the number and what specific action do I take today?",
         "L4A": "What does this data show statistically and what are the methodological caveats?",
     }
-    governing_question = governing_questions.get(level, governing_questions["L2"])
+    governing_question = governing_questions.get(
+        level, governing_questions["L2"]
+    )
 
     language_rules = {
-        "L1": "Max 20 words per sentence. Strategic headlines only. No operational detail. No hedging. Decisive. Translate numbers to business impact.",
+        "L1": "Max 20 words per sentence. Strategic headlines only. No operational detail. No hedging. Decisive.",
         "L2": "Max 25 words per sentence. Performance vs target focus. Always state variance with baseline. Businesslike and direct.",
         "L3": "Max 30 words per sentence. Plain English. Action-oriented. Team-focused. Explain what numbers mean.",
         "L4F": "Max 15 words per sentence. Number then action only.",
@@ -578,27 +753,27 @@ def build_role_profile(user_role, industry, df):
         inclusions = ["sales", "profit", "margin", "cost", "shipping", "discount", "revenue"]
         exclusions = universal_exclusions
         kpi_focus = ["Total Revenue", "Total Profit", "Profit Margin %", "Shipping Cost Total"]
-        chart_focus = ["Profit by category", "Sales trend over time", "Sales vs profit by segment", "Shipping cost by category"]
+        chart_focus = ["Profit by category", "Sales trend over time", "Sales vs profit by segment"]
     elif function == "Finance" and level in ["L1", "L2"]:
         inclusions = ["sales", "profit", "margin", "discount", "shipping", "cost", "revenue"]
         exclusions = universal_exclusions
-        kpi_focus = ["Total Revenue", "Total Profit", "Profit Margin %", "Total Discount Impact", "Shipping Cost Total"]
-        chart_focus = ["Profit margin by category", "Discount impact on profit", "Shipping cost by category", "Revenue vs profit over time"]
+        kpi_focus = ["Total Revenue", "Total Profit", "Profit Margin %", "Total Discount Impact"]
+        chart_focus = ["Profit margin by category", "Discount impact on profit", "Revenue vs profit over time"]
     elif function == "Sales" or ("sales" in role_lower and level in ["L2", "L3"]):
         inclusions = ["sales", "profit", "quantity", "discount", "shipping", "revenue", "target"]
         exclusions = universal_exclusions
         kpi_focus = ["Total Sales", "Average Order Value", "Total Orders", "Profit per Order"]
-        chart_focus = ["Sales by region", "Sales by category", "Sales trend over time", "Profit by segment"]
+        chart_focus = ["Sales by region", "Sales by category", "Sales trend over time"]
     elif function == "HR":
-        inclusions = ["attrition", "salary", "performance", "tenure", "satisfaction", "headcount", "absence", "engagement"]
+        inclusions = ["attrition", "salary", "performance", "tenure", "satisfaction", "headcount"]
         exclusions = universal_exclusions + ["sales", "profit", "shipping", "product"]
         kpi_focus = ["Attrition Rate", "Average Tenure", "Headcount", "Average Satisfaction"]
-        chart_focus = ["Attrition by department", "Satisfaction distribution", "Tenure vs performance", "Headcount trend"]
+        chart_focus = ["Attrition by department", "Satisfaction distribution", "Tenure vs performance"]
     elif function == "Operations":
         inclusions = ["units", "defects", "downtime", "efficiency", "cycle", "throughput", "yield", "output"]
         exclusions = universal_exclusions + ["customer", "revenue", "marketing"]
         kpi_focus = ["Overall Efficiency %", "Total Defects", "Total Downtime", "Output vs Target"]
-        chart_focus = ["Efficiency trend over time", "Defect rate by line", "Downtime breakdown", "Output vs target"]
+        chart_focus = ["Efficiency trend over time", "Defect rate by line", "Downtime breakdown"]
     else:
         inclusions = ["sales", "revenue", "profit", "cost", "target", "performance", "margin"]
         exclusions = universal_exclusions
@@ -653,7 +828,10 @@ def screen_role_input():
 
     industry_choice = st.radio(
         "Is this correct?",
-        options=[f"✅ Yes — {detected} is correct", "✏️ No — I will describe it myself"],
+        options=[
+            f"✅ Yes — {detected} is correct",
+            "✏️ No — I will describe it myself"
+        ],
         index=0
     )
 
@@ -686,7 +864,10 @@ def screen_role_input():
     role_is_safe = True
     if user_role:
         if any(kw in user_role.lower() for kw in injection_keywords):
-            st.error("⚠️ This input cannot be processed. Please enter a valid role.")
+            st.error(
+                "⚠️ This input cannot be processed. "
+                "Please enter a valid role."
+            )
             role_is_safe = False
 
     if user_role and role_is_safe and len(user_role) > 2:
@@ -700,7 +881,9 @@ def screen_role_input():
             st.info(f"**Function:** {profile['function']}")
         with col3:
             st.info(f"**Depth:** {profile['stats_depth']}")
-        st.caption(f"🎯 Governing question: *{profile['governing_question']}*")
+        st.caption(
+            f"🎯 Governing question: *{profile['governing_question']}*"
+        )
 
     st.markdown("---")
     button_ready = user_role and role_is_safe and confirmed_industry
@@ -750,13 +933,15 @@ def get_relevant_columns(df, role_profile):
         elif 'date' in col_lower or 'time' in col_lower:
             meaningful.append(col)
 
+    priority = [
+        col for col in meaningful
+        if any(inc in col.lower() for inc in inclusions)
+    ]
+    others = [col for col in meaningful if col not in priority]
+
     if level == "L1":
-        priority = [col for col in meaningful if any(inc in col.lower() for inc in inclusions)]
-        others = [col for col in meaningful if col not in priority]
         role_relevant = priority + others
     else:
-        priority = [col for col in meaningful if any(inc in col.lower() for inc in inclusions)]
-        others = [col for col in meaningful if col not in priority]
         role_relevant = priority + others[:5]
 
     return role_relevant if role_relevant else meaningful
@@ -784,9 +969,16 @@ def precompute_statistics(df, relevant_cols, role_profile, df_name="Dataset"):
         "period_info": None,
     }
 
-    numeric_cols = [c for c in relevant_cols if pd.api.types.is_numeric_dtype(df[c])]
-    categorical_cols = [c for c in relevant_cols if pd.api.types.is_object_dtype(df[c])]
-    date_cols = [c for c in df.columns if 'date' in c.lower() or 'time' in c.lower()]
+    numeric_cols = [
+        c for c in relevant_cols if pd.api.types.is_numeric_dtype(df[c])
+    ]
+    categorical_cols = [
+        c for c in relevant_cols if pd.api.types.is_object_dtype(df[c])
+    ]
+    date_cols = [
+        c for c in df.columns
+        if 'date' in c.lower() or 'time' in c.lower()
+    ]
 
     for col in numeric_cols:
         series = df[col].dropna()
@@ -803,20 +995,30 @@ def precompute_statistics(df, relevant_cols, role_profile, df_name="Dataset"):
             "total": round(float(series.sum()), 2),
             "count": int(len(series)),
             "missing": int(df[col].isnull().sum()),
-            "outlier_count": int(((series - mean_val).abs() > 2 * std_val).sum()) if std_val > 0 else 0,
+            "outlier_count": int(
+                ((series - mean_val).abs() > 2 * std_val).sum()
+            ) if std_val > 0 else 0,
         }
 
     target_keywords = ['target', 'budget', 'plan', 'quota', 'forecast']
     actual_keywords = ['actual', 'sales', 'revenue', 'spend', 'achieved']
-    target_cols = [c for c in numeric_cols if any(kw in c.lower() for kw in target_keywords)]
-    actual_cols = [c for c in numeric_cols if any(kw in c.lower() for kw in actual_keywords)]
+    target_cols = [
+        c for c in numeric_cols
+        if any(kw in c.lower() for kw in target_keywords)
+    ]
+    actual_cols = [
+        c for c in numeric_cols
+        if any(kw in c.lower() for kw in actual_keywords)
+    ]
     for t_col in target_cols:
         for a_col in actual_cols:
             if t_col != a_col:
                 t_total = df[t_col].sum()
                 a_total = df[a_col].sum()
                 if t_total > 0:
-                    variance_pct = round(((a_total - t_total) / t_total) * 100, 2)
+                    variance_pct = round(
+                        ((a_total - t_total) / t_total) * 100, 2
+                    )
                     key = f"{a_col}_vs_{t_col}"
                     stats["target_vs_actual"][key] = {
                         "actual_col": a_col,
@@ -825,7 +1027,11 @@ def precompute_statistics(df, relevant_cols, role_profile, df_name="Dataset"):
                         "target_total": round(float(t_total), 2),
                         "variance_pct": variance_pct,
                         "variance_abs": round(float(a_total - t_total), 2),
-                        "status": ("GREEN" if variance_pct >= -5 else "AMBER" if variance_pct >= -15 else "RED")
+                        "status": (
+                            "GREEN" if variance_pct >= -5
+                            else "AMBER" if variance_pct >= -15
+                            else "RED"
+                        )
                     }
 
     max_categories = 5 if level == "L1" else 15
@@ -834,16 +1040,25 @@ def precompute_statistics(df, relevant_cols, role_profile, df_name="Dataset"):
         breakdown = {}
         for numeric_col in numeric_cols[:4]:
             try:
-                group = df.groupby(col)[numeric_col].agg(['sum', 'mean', 'count'])
+                group = df.groupby(col)[numeric_col].agg(
+                    ['sum', 'mean', 'count']
+                )
                 breakdown[numeric_col] = {
-                    str(k): {"sum": round(float(v['sum']), 2), "mean": round(float(v['mean']), 2), "count": int(v['count'])}
+                    str(k): {
+                        "sum": round(float(v['sum']), 2),
+                        "mean": round(float(v['mean']), 2),
+                        "count": int(v['count'])
+                    }
                     for k, v in list(group.iterrows())[:max_categories]
                 }
             except Exception:
                 pass
         stats["categorical_stats"][col] = {
             "unique_values": int(value_counts.nunique()),
-            "top_values": {str(k): int(v) for k, v in value_counts.head(max_categories).items()},
+            "top_values": {
+                str(k): int(v)
+                for k, v in value_counts.head(max_categories).items()
+            },
             "breakdown": breakdown
         }
 
@@ -851,7 +1066,9 @@ def precompute_statistics(df, relevant_cols, role_profile, df_name="Dataset"):
         date_col = date_cols[0]
         try:
             df_copy = df.copy()
-            df_copy[date_col] = pd.to_datetime(df_copy[date_col], errors='coerce')
+            df_copy[date_col] = pd.to_datetime(
+                df_copy[date_col], errors='coerce'
+            )
             df_copy = df_copy.dropna(subset=[date_col])
             if len(df_copy) > 0:
                 min_date = df_copy[date_col].min()
@@ -866,7 +1083,10 @@ def precompute_statistics(df, relevant_cols, role_profile, df_name="Dataset"):
                 for col in numeric_cols[:4]:
                     try:
                         monthly = df_copy.groupby('_period')[col].sum()
-                        stats["time_series"][col] = {str(k): round(float(v), 2) for k, v in monthly.items()}
+                        stats["time_series"][col] = {
+                            str(k): round(float(v), 2)
+                            for k, v in monthly.items()
+                        }
                     except Exception:
                         pass
         except Exception:
@@ -885,7 +1105,9 @@ def precompute_statistics(df, relevant_cols, role_profile, df_name="Dataset"):
             stats["anomalies"].append({
                 "column": col,
                 "outlier_count": len(outliers),
-                "outlier_values": [round(float(v), 2) for v in outliers.head(3)],
+                "outlier_values": [
+                    round(float(v), 2) for v in outliers.head(3)
+                ],
                 "mean": round(float(mean_val), 2),
                 "std": round(float(std_val), 2),
             })
@@ -930,7 +1152,9 @@ def precompute_comparison(df1, df2, role_profile, name1, name2):
     }
     numeric_cols = [
         c for c in common_cols
-        if pd.api.types.is_numeric_dtype(df1[c]) and c in df2.columns and pd.api.types.is_numeric_dtype(df2[c])
+        if pd.api.types.is_numeric_dtype(df1[c])
+        and c in df2.columns
+        and pd.api.types.is_numeric_dtype(df2[c])
     ]
     for col in numeric_cols:
         val1 = stats1["numeric_stats"].get(col, {}).get("total", 0)
@@ -938,7 +1162,11 @@ def precompute_comparison(df1, df2, role_profile, name1, name2):
         if val1 == 0:
             continue
         change_pct = round(((val2 - val1) / abs(val1)) * 100, 2)
-        direction = ("improved" if change_pct > 2 else "declined" if change_pct < -2 else "stable")
+        direction = (
+            "improved" if change_pct > 2
+            else "declined" if change_pct < -2
+            else "stable"
+        )
         comparison["numeric_comparison"][col] = {
             "dataset1_total": val1,
             "dataset2_total": val2,
@@ -955,10 +1183,13 @@ def precompute_comparison(df1, df2, role_profile, name1, name2):
 
 
 # ============================================================
-# AI PROMPT BUILDER
+# AI PROMPT BUILDER — MAIN DASHBOARD
 # ============================================================
 
-def build_analysis_prompt(stats, role_profile, industry, is_comparison=False, comparison_data=None):
+def build_analysis_prompt(
+    stats, role_profile, industry,
+    is_comparison=False, comparison_data=None
+):
     numeric_cols_available = list(stats.get("numeric_stats", {}).keys())
     categorical_cols_available = list(stats.get("categorical_stats", {}).keys())
     time_series_cols_available = list(stats.get("time_series", {}).keys())
@@ -966,31 +1197,18 @@ def build_analysis_prompt(stats, role_profile, industry, is_comparison=False, co
 
     columns_manifest = f"""
 EXACT AVAILABLE COLUMNS — USE ONLY THESE IN CHART FIELDS:
+Numeric columns (y_field options): {json.dumps(numeric_cols_available)}
+Categorical columns (x_field options): {json.dumps(categorical_cols_available)}
+Time series columns: {json.dumps(time_series_cols_available)}
+Target vs Actual keys: {json.dumps(target_vs_actual_available)}
 
-Numeric columns (y_field options):
-{json.dumps(numeric_cols_available)}
-
-Categorical columns (x_field options for breakdowns):
-{json.dumps(categorical_cols_available)}
-
-Time series columns (y_field when data_source is time_series):
-{json.dumps(time_series_cols_available)}
-
-Target vs Actual keys (only use if non-empty):
-{json.dumps(target_vs_actual_available)}
-
-CHART FIELD RULES — NON NEGOTIABLE:
-- x_field MUST be an exact name from the lists above
-- y_field MUST be an exact name from the lists above
-- data_source categorical_stats → x_field from categorical list
-- data_source time_series → y_field from time series list
-- data_source target_vs_actual → only if list above is non-empty
-- NEVER invent column names not in these lists
-- If a chart idea cannot use available columns, choose a different chart
+CHART FIELD RULES:
+- x_field and y_field MUST be exact names from lists above
+- NEVER invent column names
+- Traffic lights ONLY if target_vs_actual is non-empty — else []
 """
 
     stats_json = json.dumps(stats, indent=2, default=str)
-
     comparison_section = ""
     if is_comparison and comparison_data:
         comparison_section = f"""
@@ -998,64 +1216,38 @@ COMPARISON MODE:
 Dataset 1: {comparison_data['stats1']['dataset_name']}
 Dataset 2: {comparison_data['stats2']['dataset_name']}
 Changes: {json.dumps(comparison_data['comparison'], indent=2)}
-Improved: {comparison_data['comparison']['improved']}
-Declined: {comparison_data['comparison']['declined']}
-Stable: {comparison_data['comparison']['stable']}
-Generate comparative insights.
 Root cause hypothesis required for any decline above 10%.
 """
 
-    exclusion_text = (f"\nEXPLICIT EXCLUSIONS — never reference: {', '.join(role_profile['exclusions'])}" if role_profile["exclusions"] else "")
-    inclusion_text = f"\nPRIORITY FOCUS: {', '.join(role_profile['inclusions'])}"
-    kpi_text = f"\nKPI CARDS FOCUS ON: {', '.join(role_profile['kpi_focus'])}"
-    chart_text = f"\nCHART BUSINESS QUESTIONS (use available columns above): {', '.join(role_profile['chart_focus'])}"
-
     prompt = f"""You are an enterprise-grade business intelligence analyst.
-You receive pre-computed statistics from a full dataset.
 Generate a complete, accurate, role-specific business intelligence dashboard.
 
 ROLE: {role_profile['role_raw']}
-ASSIGNED LEVEL: {role_profile['level']}
-ASSIGNED FUNCTION: {role_profile['function']}
+LEVEL: {role_profile['level']}
+FUNCTION: {role_profile['function']}
 INDUSTRY: {industry}
 
-GOVERNING QUESTION — answer this and only this:
-{role_profile['governing_question']}
-
-Every insight, KPI, chart, and recommendation must directly answer
-this governing question. Exclude anything that does not.
-
-LANGUAGE RULES — NON NEGOTIABLE:
-{role_profile['language_rule']}
-{exclusion_text}
-{inclusion_text}
-{kpi_text}
-{chart_text}
+GOVERNING QUESTION: {role_profile['governing_question']}
+LANGUAGE RULES: {role_profile['language_rule']}
+PRIORITY FOCUS: {', '.join(role_profile['inclusions'])}
+KPI FOCUS: {', '.join(role_profile['kpi_focus'])}
 
 {columns_manifest}
 
-ABSOLUTE RULES:
-- Every number must come from pre-computed statistics only
-- Never invent data, trends, or patterns not in statistics
-- Never present uncertain findings as facts
-- Traffic lights ONLY if target_vs_actual list is non-empty — else []
-- Never fabricate thresholds
+RULES:
+- Every number from pre-computed statistics only
+- Never invent data
 - x_field and y_field must be exact names from column manifest
-- CEO and Store Manager analysing same data must differ completely:
-  different framing, different language, different actions
+- CEO and Store Manager must produce genuinely different analyses
 
-CONFIDENCE:
-HIGH: 100+ rows, consistent pattern across 3+ periods or categories
-MEDIUM: 30-99 rows, directional
-INDICATIVE: below 30 rows
-CONFIDENCE_OVERALL = lowest individual confidence
+CONFIDENCE: HIGH=100+ rows consistent. MEDIUM=30-99 rows. INDICATIVE=below 30.
 
 PRE-COMPUTED STATISTICS:
 {stats_json}
 
 {comparison_section}
 
-Return ONLY valid JSON. No markdown. No explanation. Exact schema:
+Return ONLY valid JSON. No markdown. No explanation.
 
 {{
   "role_interpreted": "string",
@@ -1067,47 +1259,17 @@ Return ONLY valid JSON. No markdown. No explanation. Exact schema:
     "sentence_3": "string"
   }},
   "kpi_cards": [
-    {{
-      "label": "string",
-      "value": "string",
-      "delta": "string or null",
-      "delta_positive": true,
-      "context": "string"
-    }}
+    {{"label": "string", "value": "string", "delta": "string or null", "delta_positive": true, "context": "string"}}
   ],
   "traffic_lights": [],
   "anomalies": [
-    {{
-      "severity": "HIGH|MEDIUM|LOW",
-      "description": "string",
-      "metric": "string",
-      "value": "string",
-      "expected": "string"
-    }}
+    {{"severity": "HIGH|MEDIUM|LOW", "description": "string", "metric": "string", "value": "string", "expected": "string"}}
   ],
   "charts": [
-    {{
-      "type": "bar|line|pie|scatter|waterfall|ranked_list",
-      "title": "string",
-      "data_source": "categorical_stats|time_series|target_vs_actual|numeric_stats",
-      "x_field": "string — exact name from manifest",
-      "y_field": "string — exact name from manifest",
-      "group_by": "string or null",
-      "caption": "string",
-      "sentiment": "POSITIVE|NEGATIVE|NEUTRAL|URGENT",
-      "confidence": "HIGH|MEDIUM|INDICATIVE",
-      "verified": true
-    }}
+    {{"type": "bar|line|pie|scatter|waterfall|ranked_list", "title": "string", "data_source": "categorical_stats|time_series|target_vs_actual|numeric_stats", "x_field": "string", "y_field": "string", "group_by": "string or null", "caption": "string", "sentiment": "POSITIVE|NEGATIVE|NEUTRAL|URGENT", "confidence": "HIGH|MEDIUM|INDICATIVE", "verified": true}}
   ],
   "recommendations": [
-    {{
-      "priority": 1,
-      "action": "string",
-      "rationale": "string",
-      "owner": "string",
-      "timeframe": "IMMEDIATE|SHORT_TERM|STRATEGIC",
-      "data_evidence": "string"
-    }}
+    {{"priority": 1, "action": "string", "rationale": "string", "owner": "string", "timeframe": "IMMEDIATE|SHORT_TERM|STRATEGIC", "data_evidence": "string"}}
   ],
   "narrative": {{
     "opening": "string",
@@ -1130,10 +1292,10 @@ Return ONLY valid JSON. No markdown. No explanation. Exact schema:
 
 
 # ============================================================
-# OPENAI API CALL
+# OPENAI API CALL — MAIN DASHBOARD
 # ============================================================
 
-def call_openai(prompt, api_key, progress_placeholder):
+def call_openai(prompt, progress_placeholder):
     import time
     steps = [
         "📂 Reading dataset and role profile...",
@@ -1150,7 +1312,7 @@ def call_openai(prompt, api_key, progress_placeholder):
         progress_placeholder.info(f"**Step {i+1} of {len(steps)}:** {step}")
         time.sleep(0.35)
 
-    client = openai.OpenAI(api_key=api_key)
+    client = openai.OpenAI(api_key=st.session_state.openai_key)
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         max_tokens=4000,
@@ -1162,8 +1324,7 @@ def call_openai(prompt, api_key, progress_placeholder):
                     "You are an enterprise BI analyst. "
                     "Return only valid JSON matching the exact schema. "
                     "No markdown. No explanation. "
-                    "x_field and y_field must be exact column names from the manifest provided. "
-                    "Every insight must answer the governing question."
+                    "x_field and y_field must be exact column names from the manifest."
                 )
             },
             {"role": "user", "content": prompt}
@@ -1176,7 +1337,10 @@ def call_openai(prompt, api_key, progress_placeholder):
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:
-        raise ValueError(f"AI response could not be parsed. Details: {str(e)} | Preview: {raw[:300]}")
+        raise ValueError(
+            f"AI response could not be parsed. "
+            f"Details: {str(e)} | Preview: {raw[:300]}"
+        )
 
 
 # ============================================================
@@ -1218,7 +1382,10 @@ def render_chart(chart_spec, stats, df):
     x_field = chart_spec.get("x_field", "")
     y_field = chart_spec.get("y_field", "")
 
-    COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#6366f1", "#8b5cf6", "#06b6d4", "#ec4899"]
+    COLORS = [
+        "#3b82f6", "#10b981", "#f59e0b", "#ef4444",
+        "#6366f1", "#8b5cf6", "#06b6d4", "#ec4899"
+    ]
     fig = None
 
     try:
@@ -1237,7 +1404,11 @@ def render_chart(chart_spec, stats, df):
             if matched_col:
                 labels = list(ts_data[matched_col].keys())
                 values = list(ts_data[matched_col].values())
-                fig = px.line(x=labels, y=values, title=title, labels={"x": "Period", "y": matched_col}, color_discrete_sequence=COLORS)
+                fig = px.line(
+                    x=labels, y=values, title=title,
+                    labels={"x": "Period", "y": matched_col},
+                    color_discrete_sequence=COLORS
+                )
                 fig.update_traces(line=dict(width=2.5), mode='lines+markers')
 
         elif data_source == "categorical_stats":
@@ -1273,14 +1444,26 @@ def render_chart(chart_spec, stats, df):
                     segments = list(top_vals.keys())[:10]
                     values = list(top_vals.values())[:10]
                     matched_num = "Count"
-                df_plot = pd.DataFrame({matched_cat: segments, matched_num: values}).sort_values(matched_num, ascending=False)
+                df_plot = pd.DataFrame(
+                    {matched_cat: segments, matched_num: values}
+                ).sort_values(matched_num, ascending=False)
                 if chart_type == "pie":
-                    fig = px.pie(df_plot, names=matched_cat, values=matched_num, title=title, color_discrete_sequence=COLORS)
+                    fig = px.pie(
+                        df_plot, names=matched_cat, values=matched_num,
+                        title=title, color_discrete_sequence=COLORS
+                    )
                 elif chart_type == "ranked_list":
                     df_plot = df_plot.sort_values(matched_num, ascending=True).tail(10)
-                    fig = px.bar(df_plot, x=matched_num, y=matched_cat, orientation='h', title=title, color_discrete_sequence=COLORS)
+                    fig = px.bar(
+                        df_plot, x=matched_num, y=matched_cat,
+                        orientation='h', title=title,
+                        color_discrete_sequence=COLORS
+                    )
                 else:
-                    fig = px.bar(df_plot, x=matched_cat, y=matched_num, title=title, color_discrete_sequence=COLORS)
+                    fig = px.bar(
+                        df_plot, x=matched_cat, y=matched_num,
+                        title=title, color_discrete_sequence=COLORS
+                    )
 
         elif data_source == "target_vs_actual":
             tva = stats.get("target_vs_actual", {})
@@ -1432,7 +1615,10 @@ def render_anomalies(anomalies):
     for anomaly in anomalies:
         severity = anomaly.get("severity", "LOW")
         icon = severity_icons.get(severity, "🔵")
-        with st.expander(f"{icon} {severity} — {anomaly.get('metric', '')}", expanded=(severity == "HIGH")):
+        with st.expander(
+            f"{icon} {severity} — {anomaly.get('metric', '')}",
+            expanded=(severity == "HIGH")
+        ):
             st.markdown(f"**Finding:** {anomaly.get('description', '')}")
             col1, col2 = st.columns(2)
             with col1:
@@ -1489,12 +1675,19 @@ def render_recommendations(recommendations):
         return
     st.markdown("### 💡 Recommendations")
     priority_icons = {1: "🔴", 2: "🟡", 3: "🟢", 4: "🔵", 5: "⚪"}
-    timeframe_labels = {"IMMEDIATE": "⚡ Immediate", "SHORT_TERM": "📅 Short Term", "STRATEGIC": "🗺️ Strategic"}
+    timeframe_labels = {
+        "IMMEDIATE": "⚡ Immediate",
+        "SHORT_TERM": "📅 Short Term",
+        "STRATEGIC": "🗺️ Strategic"
+    }
     for rec in sorted(recommendations, key=lambda x: x.get("priority", 5)):
         priority = rec.get("priority", 3)
         icon = priority_icons.get(priority, "⚪")
         timeframe = timeframe_labels.get(rec.get("timeframe", ""), rec.get("timeframe", ""))
-        with st.expander(f"{icon} Priority {priority} — {rec.get('action', '')}", expanded=(priority == 1)):
+        with st.expander(
+            f"{icon} Priority {priority} — {rec.get('action', '')}",
+            expanded=(priority == 1)
+        ):
             st.markdown(f"**Rationale:** {rec.get('rationale', '')}")
             st.markdown(f"**Data Evidence:** {rec.get('data_evidence', '')}")
             col1, col2 = st.columns(2)
@@ -1523,7 +1716,10 @@ def render_comparison_insights(comparison_insights):
     for insight in comparison_insights:
         direction = insight.get("direction", "stable")
         icon = direction_icons.get(direction, "➡️")
-        with st.expander(f"{icon} {insight.get('metric', '')} — {insight.get('change_pct', '')}% change", expanded=(direction == "declined")):
+        with st.expander(
+            f"{icon} {insight.get('metric', '')} — {insight.get('change_pct', '')}% change",
+            expanded=(direction == "declined")
+        ):
             st.markdown(f"**Implication:** {insight.get('business_implication', '')}")
             st.markdown(f"**Root Cause:** {insight.get('root_cause_hypothesis', '')}")
 
@@ -1597,7 +1793,11 @@ def render_precomputed_stats(stats):
                 "Outliers": s['outlier_count']
             })
         if rows:
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            st.dataframe(
+                pd.DataFrame(rows),
+                use_container_width=True,
+                hide_index=True
+            )
     if stats.get("period_info"):
         p = stats["period_info"]
         st.info(f"📅 Date range: **{p['from']}** to **{p['to']}** ({p['days']} days)")
@@ -1609,155 +1809,300 @@ def render_precomputed_stats(stats):
 
 
 # ============================================================
-# CHAT FUNCTIONS — NATURAL LANGUAGE QUERY (FEATURE 12)
+# CHAT — GEMINI FLASH CALL
 # ============================================================
 
-def build_stats_summary_for_chat(stats):
+def call_gemini(messages, max_tokens=1000):
     """
-    Builds a compact text summary of pre-computed stats.
-    This is what gets sent to the AI for chat — not the raw data.
-    Keeps token cost low.
+    Calls Gemini Flash via REST API.
+    Falls back to gpt-4o-mini silently if Gemini key missing or fails.
+    messages: list of {"role": "user"|"model", "parts": [{"text": "..."}]}
     """
-    lines = []
-    lines.append(f"Dataset: {stats.get('dataset_name', 'Unknown')}")
-    lines.append(f"Total rows: {stats.get('total_rows', 0)}")
+    gemini_key = st.session_state.gemini_key
 
-    if stats.get("numeric_stats"):
-        lines.append("\nNumeric column totals and averages:")
-        for col, s in stats["numeric_stats"].items():
-            lines.append(f"  {col}: total={s['total']}, mean={s['mean']}, min={s['min']}, max={s['max']}")
-
-    if stats.get("categorical_stats"):
-        lines.append("\nCategorical breakdowns (top values by count):")
-        for col, s in stats["categorical_stats"].items():
-            top = list(s.get("top_values", {}).items())[:5]
-            top_str = ", ".join([f"{k}={v}" for k, v in top])
-            lines.append(f"  {col}: {top_str}")
-            # Include numeric breakdowns if available
-            if s.get("breakdown"):
-                for num_col, breakdown in list(s["breakdown"].items())[:2]:
-                    sums = {k: v["sum"] for k, v in list(breakdown.items())[:5]}
-                    sums_str = ", ".join([f"{k}={v}" for k, v in sums.items()])
-                    lines.append(f"    {col} by {num_col} (sum): {sums_str}")
-
-    if stats.get("time_series"):
-        lines.append("\nTime series (monthly totals):")
-        for col, ts in stats["time_series"].items():
-            periods = list(ts.items())
-            lines.append(f"  {col}: {len(periods)} periods from {periods[0][0]} to {periods[-1][0]}")
-            # Show last 3 periods
-            for period, val in periods[-3:]:
-                lines.append(f"    {period}: {val}")
-
-    if stats.get("target_vs_actual"):
-        lines.append("\nTarget vs Actual:")
-        for key, item in stats["target_vs_actual"].items():
-            lines.append(f"  {item['actual_col']} vs {item['target_col']}: actual={item['actual_total']}, target={item['target_total']}, variance={item['variance_pct']}% ({item['status']})")
-
-    if stats.get("anomalies"):
-        lines.append("\nAnomalies detected:")
-        for a in stats["anomalies"]:
-            lines.append(f"  {a['column']}: {a['outlier_count']} outliers (mean={a['mean']}, std={a['std']})")
-
-    if stats.get("period_info"):
-        p = stats["period_info"]
-        lines.append(f"\nDate range: {p['from']} to {p['to']} ({p['days']} days)")
-
-    return "\n".join(lines)
-
-
-def generate_suggested_questions(role, industry, stats, api_key):
-    """
-    One small API call to generate 4-5 role-specific questions.
-    Uses the stats summary — not raw data.
-    Returns a list of question strings.
-    """
-    stats_summary = build_stats_summary_for_chat(stats)
-
-    prompt = f"""You are a business intelligence assistant.
-Generate exactly 4 short, specific questions that a {role} in {industry} would want to ask about their data.
-Base questions on actual patterns in the statistics provided.
-Questions must be answerable from the statistics provided.
-Return ONLY a JSON array of 4 strings. No markdown. No explanation.
-
-Role: {role}
-Industry: {industry}
-
-Statistics summary:
-{stats_summary}
-
-Return format:
-["Question 1?", "Question 2?", "Question 3?", "Question 4?"]"""
+    if not gemini_key:
+        # Silent fallback to OpenAI
+        return call_openai_chat(messages, max_tokens)
 
     try:
-        client = openai.OpenAI(api_key=api_key)
+        import urllib.request
+        import urllib.error
+
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"gemini-1.5-flash:generateContent?key={gemini_key}"
+        )
+
+        payload = {
+            "contents": messages,
+            "generationConfig": {
+                "temperature": 0.1,
+                "maxOutputTokens": max_tokens,
+            }
+        }
+
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+
+        with urllib.request.urlopen(req, timeout=30) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            return result["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+    except Exception:
+        # Silent fallback to OpenAI
+        return call_openai_chat(messages, max_tokens)
+
+
+def call_openai_chat(messages, max_tokens=1000):
+    """
+    Fallback chat using gpt-4o-mini.
+    Converts Gemini message format to OpenAI format.
+    """
+    try:
+        openai_messages = []
+        for m in messages:
+            role = "user" if m.get("role") == "user" else "assistant"
+            text = m.get("parts", [{}])[0].get("text", "")
+            openai_messages.append({"role": role, "content": text})
+
+        client = openai.OpenAI(api_key=st.session_state.openai_key)
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            max_tokens=500,
-            temperature=0.2,
+            max_tokens=max_tokens,
+            temperature=0.1,
             messages=[
-                {"role": "system", "content": "Return only a valid JSON array of 4 question strings. No markdown. No explanation."},
-                {"role": "user", "content": prompt}
-            ]
+                {"role": "system", "content": "You are a precise data analyst. Return only valid JSON."},
+            ] + openai_messages
         )
-        raw = response.choices[0].message.content.strip()
-        raw = raw.replace("```json", "").replace("```", "").strip()
-        questions = json.loads(raw)
-        if isinstance(questions, list):
-            return [str(q) for q in questions[:5]]
-        return []
-    except Exception:
-        return [
-            "Which metric had the highest value overall?",
-            "What was the trend over time?",
-            "Which category performed best?",
-            "Were there any unusual patterns in the data?"
-        ]
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return json.dumps({
+            "answer": f"Service temporarily unavailable. Please try again. ({str(e)[:80]})",
+            "data_available": False,
+            "suggested_followup": None,
+            "chart_needed": False,
+            "chart": None
+        })
 
 
-def answer_chat_question(question, role, industry, stats, api_key):
+# ============================================================
+# CHAT — STEP 1: INTERPRET QUESTION (tiny call)
+# ============================================================
+
+def interpret_question(question, df_columns):
     """
-    One small API call to answer a single user question.
-    Uses stats summary only — never re-sends raw data.
-    Returns a dict with answer text, optional chart spec, and follow-up.
+    Gemini Flash interprets the question and returns a structured
+    pandas operation. No data sent — just column names and question.
+    ~100 tokens. Effectively free.
     """
-    stats_summary = build_stats_summary_for_chat(stats)
+    prompt = f"""You are a data analyst. A user asked a question about a dataset.
+Return a JSON object describing the pandas operation needed to answer it.
 
-    # Build list of available column names for chart spec validation
-    numeric_cols = list(stats.get("numeric_stats", {}).keys())
-    categorical_cols = list(stats.get("categorical_stats", {}).keys())
-    time_series_cols = list(stats.get("time_series", {}).keys())
+Available columns: {json.dumps(df_columns)}
 
-    prompt = f"""You are a business intelligence assistant answering a question for a {role} in {industry}.
-Answer using ONLY the statistics provided. Do not invent data.
-If the data cannot answer the question, say so clearly and suggest a related question you CAN answer.
+Question: {question}
 
-Role: {role}
-Industry: {industry}
+Return ONLY valid JSON. No markdown.
 
-Available column names:
-- Numeric: {json.dumps(numeric_cols)}
-- Categorical: {json.dumps(categorical_cols)}
-- Time series: {json.dumps(time_series_cols)}
-
-Statistics summary:
-{stats_summary}
-
-User question: {question}
-
-Return ONLY valid JSON. No markdown. No explanation.
-
-Schema:
 {{
-  "answer": "string — plain English answer written for a {role}. Use actual numbers from statistics.",
+  "operation": "groupby|filter_groupby|total|average|trend|top_n|correlation|filter_total",
+  "group_col": "column name or null",
+  "value_col": "column name or null",
+  "agg": "sum|mean|count|min|max",
+  "filter_col": "column name or null",
+  "filter_val": "value to filter by or null",
+  "secondary_group": "second groupby column or null",
+  "n": 5,
+  "time_col": "date column name or null",
+  "answerable": true
+}}
+
+If the question cannot be answered from available columns, set answerable to false."""
+
+    messages = [{"role": "user", "parts": [{"text": prompt}]}]
+    raw = call_gemini(messages, max_tokens=300)
+    raw = raw.replace("```json", "").replace("```", "").strip()
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {"operation": "total", "value_col": df_columns[0] if df_columns else None, "agg": "sum", "answerable": True}
+
+
+# ============================================================
+# CHAT — STEP 2: PYTHON EXECUTES CALCULATION
+# ============================================================
+
+def execute_calculation(instruction, df):
+    """
+    Python runs the pandas operation locally.
+    No data sent to any AI. Zero cost. Instant. Handles any size.
+    Returns a dict with the result data.
+    """
+    try:
+        operation = instruction.get("operation", "total")
+        group_col = instruction.get("group_col")
+        value_col = instruction.get("value_col")
+        agg = instruction.get("agg", "sum")
+        filter_col = instruction.get("filter_col")
+        filter_val = instruction.get("filter_val")
+        secondary_group = instruction.get("secondary_group")
+        n = instruction.get("n", 5)
+        time_col = instruction.get("time_col")
+
+        # Validate columns exist
+        all_cols = list(df.columns)
+        if value_col and value_col not in all_cols:
+            # Try fuzzy match
+            for col in all_cols:
+                if value_col.lower() in col.lower() or col.lower() in value_col.lower():
+                    value_col = col
+                    break
+        if group_col and group_col not in all_cols:
+            for col in all_cols:
+                if group_col.lower() in col.lower() or col.lower() in group_col.lower():
+                    group_col = col
+                    break
+        if filter_col and filter_col not in all_cols:
+            for col in all_cols:
+                if filter_col.lower() in col.lower() or col.lower() in filter_col.lower():
+                    filter_col = col
+                    break
+
+        # Apply filter if present
+        working_df = df.copy()
+        if filter_col and filter_val:
+            mask = working_df[filter_col].astype(str).str.lower() == str(filter_val).lower()
+            if mask.sum() == 0:
+                # Try partial match
+                mask = working_df[filter_col].astype(str).str.lower().str.contains(
+                    str(filter_val).lower(), na=False
+                )
+            working_df = working_df[mask]
+
+        if len(working_df) == 0:
+            return {"error": f"No data found matching filter: {filter_col} = {filter_val}"}
+
+        # Execute operation
+        if operation in ["groupby", "filter_groupby"] and group_col and value_col:
+            if secondary_group and secondary_group in df.columns:
+                result = working_df.groupby([group_col, secondary_group])[value_col].agg(agg).reset_index()
+                result.columns = [group_col, secondary_group, f"{agg}_{value_col}"]
+            else:
+                result = working_df.groupby(group_col)[value_col].agg(agg).reset_index()
+                result.columns = [group_col, f"{agg}_{value_col}"]
+            result = result.sort_values(f"{agg}_{value_col}", ascending=False)
+            return {
+                "type": "groupby",
+                "group_col": group_col,
+                "value_col": f"{agg}_{value_col}",
+                "data": result.to_dict(orient="records"),
+                "row_count": len(working_df),
+                "filter_applied": f"{filter_col} = {filter_val}" if filter_col else None
+            }
+
+        elif operation == "trend" and time_col and value_col:
+            working_df[time_col] = pd.to_datetime(working_df[time_col], errors='coerce')
+            working_df = working_df.dropna(subset=[time_col])
+            working_df['_period'] = working_df[time_col].dt.to_period('M')
+            result = working_df.groupby('_period')[value_col].agg(agg).reset_index()
+            result['_period'] = result['_period'].astype(str)
+            result.columns = ['Period', f"{agg}_{value_col}"]
+            return {
+                "type": "trend",
+                "time_col": "Period",
+                "value_col": f"{agg}_{value_col}",
+                "data": result.to_dict(orient="records"),
+                "filter_applied": f"{filter_col} = {filter_val}" if filter_col else None
+            }
+
+        elif operation == "top_n" and group_col and value_col:
+            result = working_df.groupby(group_col)[value_col].agg(agg).reset_index()
+            result.columns = [group_col, f"{agg}_{value_col}"]
+            result = result.nlargest(n, f"{agg}_{value_col}")
+            return {
+                "type": "top_n",
+                "group_col": group_col,
+                "value_col": f"{agg}_{value_col}",
+                "data": result.to_dict(orient="records"),
+                "n": n
+            }
+
+        elif operation == "correlation" and value_col:
+            numeric_cols = working_df.select_dtypes(include='number').columns.tolist()
+            if value_col in numeric_cols and len(numeric_cols) >= 2:
+                corr = working_df[numeric_cols].corr()[value_col].drop(value_col).sort_values(key=abs, ascending=False)
+                return {
+                    "type": "correlation",
+                    "value_col": value_col,
+                    "data": corr.head(5).to_dict()
+                }
+
+        else:
+            # Default: total or average
+            if value_col and value_col in working_df.columns:
+                if pd.api.types.is_numeric_dtype(working_df[value_col]):
+                    total = working_df[value_col].agg(agg)
+                    return {
+                        "type": "single_value",
+                        "value_col": value_col,
+                        "agg": agg,
+                        "result": round(float(total), 2),
+                        "row_count": len(working_df),
+                        "filter_applied": f"{filter_col} = {filter_val}" if filter_col else None
+                    }
+
+        return {"error": "Could not execute calculation with available columns."}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ============================================================
+# CHAT — STEP 3: PHRASE THE ANSWER (tiny call)
+# ============================================================
+
+def phrase_answer(question, calc_result, role, industry):
+    """
+    Gemini Flash receives only the calculated result — not raw data.
+    Phrases it as a role-appropriate answer.
+    ~50-100 tokens. Effectively free.
+    """
+    if "error" in calc_result:
+        return {
+            "answer": f"I couldn't calculate that. {calc_result['error']} Try rephrasing your question.",
+            "data_available": False,
+            "suggested_followup": None,
+            "chart_needed": False,
+            "chart": None
+        }
+
+    result_json = json.dumps(calc_result, indent=2, default=str)
+
+    prompt = f"""You are a business intelligence assistant.
+A {role} in {industry} asked: "{question}"
+
+The calculated result is:
+{result_json}
+
+Write a precise, role-appropriate answer using the exact numbers from the result.
+Decide if a chart would genuinely help visualise this answer.
+
+Return ONLY valid JSON. No markdown.
+
+{{
+  "answer": "string — precise answer with exact numbers, written for a {role}",
   "data_available": true,
-  "suggested_followup": "string — one follow-up question the data CAN answer, or null",
+  "suggested_followup": "string — one useful follow-up question or null",
   "chart_needed": false,
   "chart": null
 }}
 
-If a chart genuinely helps (e.g. comparison across categories, trend over time):
-Set chart_needed to true and provide:
+If a chart helps (comparison, trend, ranking):
 {{
   "answer": "string",
   "data_available": true,
@@ -1766,86 +2111,217 @@ Set chart_needed to true and provide:
   "chart": {{
     "type": "bar|line|pie|ranked_list",
     "title": "string",
-    "data_source": "categorical_stats|time_series|numeric_stats",
-    "x_field": "exact column name from available columns above",
-    "y_field": "exact column name from available columns above",
+    "data_source": "calc_result",
     "caption": "string — one sentence insight"
   }}
-}}
+}}"""
 
-Rules:
-- x_field and y_field must be exact names from the available columns lists above
-- chart_needed must be false for single-number answers
-- chart_needed must be false if no suitable columns exist for the chart
-- answer must use actual numbers from the statistics
-- If data_available is false, explain what is missing"""
+    messages = [{"role": "user", "parts": [{"text": prompt}]}]
+    raw = call_gemini(messages, max_tokens=600)
+    raw = raw.replace("```json", "").replace("```", "").strip()
 
     try:
-        client = openai.OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            max_tokens=1000,
-            temperature=0.15,
-            messages=[
-                {"role": "system", "content": "Return only valid JSON matching the exact schema. No markdown. No explanation."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        raw = response.choices[0].message.content.strip()
-        raw = raw.replace("```json", "").replace("```", "").strip()
         return json.loads(raw)
-    except Exception as e:
+    except Exception:
         return {
-            "answer": f"I could not process that question. Please try rephrasing it. (Error: {str(e)[:100]})",
-            "data_available": False,
+            "answer": f"Calculation complete. Result: {result_json[:200]}",
+            "data_available": True,
             "suggested_followup": None,
             "chart_needed": False,
             "chart": None
         }
 
 
-def render_chat_panel(stats, role, industry):
+# ============================================================
+# CHAT — RENDER RESULT CHART FROM CALC DATA
+# ============================================================
+
+def render_calc_chart(chart_spec, calc_result):
     """
-    Renders the full chat interface at the bottom of the dashboard.
-    Uses only native Streamlit components.
+    Renders a chart directly from calculation result data.
+    No stats object needed — uses the pandas result directly.
     """
+    COLORS = [
+        "#3b82f6", "#10b981", "#f59e0b", "#ef4444",
+        "#6366f1", "#8b5cf6", "#06b6d4", "#ec4899"
+    ]
+
+    try:
+        chart_type = chart_spec.get("type", "bar")
+        title = chart_spec.get("title", "Result")
+        data = calc_result.get("data", [])
+
+        if not data:
+            return None
+
+        df_plot = pd.DataFrame(data)
+        if df_plot.empty:
+            return None
+
+        cols = list(df_plot.columns)
+        x_col = cols[0]
+        y_col = cols[1] if len(cols) > 1 else cols[0]
+
+        if chart_type == "line":
+            fig = px.line(
+                df_plot, x=x_col, y=y_col, title=title,
+                color_discrete_sequence=COLORS
+            )
+            fig.update_traces(line=dict(width=2.5), mode='lines+markers')
+        elif chart_type == "pie":
+            fig = px.pie(
+                df_plot, names=x_col, values=y_col,
+                title=title, color_discrete_sequence=COLORS
+            )
+        elif chart_type == "ranked_list":
+            df_sorted = df_plot.sort_values(y_col, ascending=True).tail(10)
+            fig = px.bar(
+                df_sorted, x=y_col, y=x_col,
+                orientation='h', title=title,
+                color_discrete_sequence=COLORS
+            )
+        else:
+            fig = px.bar(
+                df_plot, x=x_col, y=y_col, title=title,
+                color_discrete_sequence=COLORS
+            )
+
+        fig.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(size=12),
+            margin=dict(l=20, r=20, t=50, b=20),
+        )
+        fig.update_xaxes(showgrid=True, gridcolor="#f1f5f9")
+        fig.update_yaxes(showgrid=True, gridcolor="#f1f5f9")
+        return fig
+
+    except Exception:
+        return None
+
+
+# ============================================================
+# CHAT — SUGGESTED QUESTIONS
+# ============================================================
+
+def generate_suggested_questions(role, industry, stats):
+    """
+    Generates 4 role-specific suggested questions.
+    Uses Gemini Flash. Sends only column names and stats summary — not data.
+    """
+    col_names = (
+        list(stats.get("numeric_stats", {}).keys()) +
+        list(stats.get("categorical_stats", {}).keys())
+    )
+
+    anomaly_summary = ""
+    if stats.get("anomalies"):
+        anomaly_summary = f"Anomalies detected in: {[a['column'] for a in stats['anomalies']]}"
+
+    period_summary = ""
+    if stats.get("period_info"):
+        p = stats["period_info"]
+        period_summary = f"Date range: {p['from']} to {p['to']}"
+
+    prompt = f"""Generate exactly 4 short, specific questions that a {role} in {industry} would ask about their data.
+Questions must be answerable using the available columns.
+Make them specific to this role — not generic.
+
+Available columns: {json.dumps(col_names)}
+{anomaly_summary}
+{period_summary}
+
+Return ONLY a JSON array of 4 strings. No markdown.
+["Question 1?", "Question 2?", "Question 3?", "Question 4?"]"""
+
+    messages = [{"role": "user", "parts": [{"text": prompt}]}]
+    raw = call_gemini(messages, max_tokens=400)
+    raw = raw.replace("```json", "").replace("```", "").strip()
+
+    try:
+        questions = json.loads(raw)
+        if isinstance(questions, list):
+            return [str(q) for q in questions[:4]]
+        return []
+    except Exception:
+        return [
+            "Which category had the highest total sales?",
+            "What was the trend over time?",
+            "Which region performed best?",
+            "Where are the biggest variances?"
+        ]
+
+
+# ============================================================
+# CHAT — FULL PIPELINE
+# ============================================================
+
+def answer_chat_question(question, role, industry, stats, df):
+    """
+    Three-step pipeline:
+    1. Gemini interprets question → pandas instruction (~100 tokens, free)
+    2. Python executes calculation locally → zero cost, any size dataset
+    3. Gemini phrases the result → role-appropriate answer (~100 tokens, free)
+    """
+    # Step 1 — interpret
+    instruction = interpret_question(question, list(df.columns))
+
+    if not instruction.get("answerable", True):
+        return {
+            "answer": (
+                "That question requires data or columns not available "
+                "in this dataset. Try asking about: "
+                f"{', '.join(list(df.columns)[:5])}."
+            ),
+            "data_available": False,
+            "suggested_followup": None,
+            "chart_needed": False,
+            "chart": None,
+            "calc_result": None
+        }
+
+    # Step 2 — calculate
+    calc_result = execute_calculation(instruction, df)
+
+    # Step 3 — phrase
+    answer_data = phrase_answer(question, calc_result, role, industry)
+    answer_data["calc_result"] = calc_result
+    return answer_data
+
+
+# ============================================================
+# CHAT — RENDER PANEL
+# ============================================================
+
+def render_chat_panel(stats, role, industry, df):
     st.markdown("### 💬 Ask a Question About Your Data")
-    st.caption("Ask anything about your dataset in plain English")
+    st.caption("Ask anything — calculations run instantly on your full dataset")
     st.divider()
 
-    # --- SUGGESTED QUESTIONS SECTION ---
+    # Suggested questions
     if not st.session_state.suggested_questions:
         if st.button("💡 Show Suggested Questions", use_container_width=False):
             with st.spinner("Generating questions for your role..."):
-                questions = generate_suggested_questions(
-                    role, industry, stats, st.session_state.api_key
-                )
+                questions = generate_suggested_questions(role, industry, stats)
                 st.session_state.suggested_questions = questions
                 st.rerun()
     else:
         st.markdown("**Suggested questions for your role:**")
-        # Render suggested questions as buttons in a row
         cols = st.columns(len(st.session_state.suggested_questions))
-        for i, (col, question) in enumerate(zip(cols, st.session_state.suggested_questions)):
+        for i, (col, question) in enumerate(
+            zip(cols, st.session_state.suggested_questions)
+        ):
             with col:
-                if st.button(
-                    question,
-                    key=f"suggested_q_{i}",
-                    use_container_width=True
-                ):
-                    # Add question to chat and get answer
-                    _process_chat_question(question, stats, role, industry)
+                if st.button(question, key=f"sq_{i}", use_container_width=True):
+                    _process_chat_question(question, stats, role, industry, df)
 
     st.markdown("---")
 
-    # --- CHAT HISTORY DISPLAY ---
+    # Chat history
     if st.session_state.chat_history:
         st.markdown("**Conversation:**")
         for entry in st.session_state.chat_history:
-            # User question — shown in a styled info box
             st.markdown(f"**You:** {entry['question']}")
-
-            # Assistant answer
             answer_data = entry.get("answer_data", {})
             answer_text = answer_data.get("answer", "")
             data_available = answer_data.get("data_available", True)
@@ -1855,71 +2331,70 @@ def render_chat_panel(stats, role, industry):
             else:
                 st.warning(f"**Assistant:** {answer_text}")
 
-            # Optional chart
+            # Render chart from calc result
             if answer_data.get("chart_needed") and answer_data.get("chart"):
-                chart_spec = answer_data["chart"]
-                fig = render_chart(chart_spec, stats, st.session_state.uploaded_df)
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True)
-                    if chart_spec.get("caption"):
-                        st.caption(f"💡 {chart_spec['caption']}")
+                calc_result = answer_data.get("calc_result")
+                if calc_result and "data" in calc_result:
+                    fig = render_calc_chart(answer_data["chart"], calc_result)
+                    if fig:
+                        st.plotly_chart(fig, use_container_width=True)
+                        if answer_data["chart"].get("caption"):
+                            st.caption(f"💡 {answer_data['chart']['caption']}")
 
-            # Follow-up suggestion
             if answer_data.get("suggested_followup"):
-                st.caption(f"🔗 You could also ask: *{answer_data['suggested_followup']}*")
-
+                st.caption(
+                    f"🔗 You could also ask: "
+                    f"*{answer_data['suggested_followup']}*"
+                )
             st.markdown("---")
 
-    # --- TEXT INPUT FOR NEW QUESTION ---
+    # Input form
     st.markdown("**Ask your own question:**")
-
-    # Use a form to handle submission cleanly
     with st.form(key=f"chat_form_{st.session_state.chat_input_key}"):
         user_question = st.text_input(
             "Type your question here...",
-            placeholder="e.g. Which region had the highest sales? What was the trend over time?",
+            placeholder="e.g. What were total sales for Electronics? "
+                        "Show me the monthly trend for Q1.",
             label_visibility="collapsed"
         )
-        submit_question = st.form_submit_button(
-            "Submit →",
-            use_container_width=False
-        )
+        submit_question = st.form_submit_button("Submit →")
 
     if submit_question and user_question.strip():
-        # Injection check on chat input
         injection_keywords = [
             "ignore", "reveal", "system prompt", "you are now",
-            "forget", "override", "jailbreak", "drop table", "select *", "<script"
+            "forget", "override", "jailbreak", "drop table",
+            "select *", "<script"
         ]
         if any(kw in user_question.lower() for kw in injection_keywords):
-            st.error("⚠️ This input cannot be processed. Please ask a question about your data.")
+            st.error(
+                "⚠️ This input cannot be processed. "
+                "Please ask a question about your data."
+            )
         else:
-            _process_chat_question(user_question.strip(), stats, role, industry)
+            _process_chat_question(
+                user_question.strip(), stats, role, industry, df
+            )
 
+    model_label = (
+        "Gemini Flash" if st.session_state.gemini_key else "GPT-4o-mini"
+    )
     st.caption(
-        f"Chat uses pre-computed statistics only. "
-        f"Raw data is never re-sent. "
-        f"{len(st.session_state.chat_history)} question(s) asked this session."
+        f"Calculations run locally on your full dataset · "
+        f"Answers powered by {model_label} · "
+        f"{len(st.session_state.chat_history)} question(s) this session"
     )
 
 
-def _process_chat_question(question, stats, role, industry):
-    """
-    Internal helper: calls the answer API, stores result in chat history, reruns.
-    """
-    with st.spinner("Answering your question..."):
+def _process_chat_question(question, stats, role, industry, df):
+    with st.spinner("Calculating..."):
         answer_data = answer_chat_question(
-            question, role, industry, stats, st.session_state.api_key
+            question, role, industry, stats, df
         )
-
-    # Store in chat history
     st.session_state.chat_history.append({
         "question": question,
         "answer_data": answer_data,
         "timestamp": datetime.now().strftime("%H:%M")
     })
-
-    # Increment key to reset text input
     st.session_state.chat_input_key += 1
     st.rerun()
 
@@ -1963,29 +2438,46 @@ def screen_dashboard():
     st.divider()
 
     if st.session_state.role_profile is None:
-        st.session_state.role_profile = build_role_profile(role, industry, df)
+        st.session_state.role_profile = build_role_profile(
+            role, industry, df
+        )
     role_profile = st.session_state.role_profile
 
     if st.session_state.dashboard_result is None:
         progress_placeholder = st.empty()
         try:
-            progress_placeholder.info("**Step 1 of 9:** 📂 Building role profile...")
+            progress_placeholder.info(
+                "**Step 1 of 9:** 📂 Building role profile..."
+            )
             relevant_cols = get_relevant_columns(df, role_profile)
 
-            progress_placeholder.info("**Step 2 of 9:** 📊 Pre-computing statistics...")
+            progress_placeholder.info(
+                "**Step 2 of 9:** 📊 Pre-computing statistics..."
+            )
             if is_comparison and comparison_df is not None:
-                comp_data = precompute_comparison(df, comparison_df, role_profile, filename, comparison_filename)
+                comp_data = precompute_comparison(
+                    df, comparison_df, role_profile,
+                    filename, comparison_filename
+                )
                 stats = comp_data["stats1"]
             else:
                 comp_data = None
-                stats = precompute_statistics(df, relevant_cols, role_profile, filename)
+                stats = precompute_statistics(
+                    df, relevant_cols, role_profile, filename
+                )
 
             st.session_state.precomputed_stats = stats
 
-            progress_placeholder.info("**Step 3 of 9:** 🧠 Building analysis prompt...")
-            prompt = build_analysis_prompt(stats, role_profile, industry, is_comparison=is_comparison, comparison_data=comp_data)
+            progress_placeholder.info(
+                "**Step 3 of 9:** 🧠 Building analysis prompt..."
+            )
+            prompt = build_analysis_prompt(
+                stats, role_profile, industry,
+                is_comparison=is_comparison,
+                comparison_data=comp_data
+            )
 
-            result = call_openai(prompt, st.session_state.api_key, progress_placeholder)
+            result = call_openai(prompt, progress_placeholder)
 
             st.session_state.dashboard_result = result
             st.session_state.analysis_error = None
@@ -1999,11 +2491,15 @@ def screen_dashboard():
 
     if st.session_state.analysis_error:
         st.error("### ⚠️ Analysis Error")
-        st.markdown(f"**What went wrong:** {st.session_state.analysis_error}")
-        st.markdown("**Your pre-computed statistics are still available below.**")
+        st.markdown(
+            f"**What went wrong:** {st.session_state.analysis_error}"
+        )
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🔄 Retry Analysis", type="primary", use_container_width=True):
+            if st.button(
+                "🔄 Retry Analysis", type="primary",
+                use_container_width=True
+            ):
                 st.session_state.dashboard_result = None
                 st.session_state.analysis_error = None
                 st.rerun()
@@ -2027,17 +2523,13 @@ def screen_dashboard():
 
     render_executive_summary(result)
     st.divider()
-
     render_kpi_cards(result.get("kpi_cards", []))
     st.divider()
-
     render_traffic_lights(result.get("traffic_lights", []))
     if result.get("traffic_lights"):
         st.divider()
-
     render_anomalies(result.get("anomalies", []))
     st.divider()
-
     render_charts(result.get("charts", []), stats, df)
     st.divider()
 
@@ -2053,7 +2545,10 @@ def screen_dashboard():
         if st.button("📝 Generate Narrative Report", type="primary"):
             st.session_state.show_narrative = True
             st.rerun()
-        st.caption("Generates a professional business document written in the voice appropriate for your role.")
+        st.caption(
+            "Generates a professional business document "
+            "written in the voice appropriate for your role."
+        )
     else:
         if result.get("narrative"):
             render_narrative(result["narrative"])
@@ -2068,19 +2563,21 @@ def screen_dashboard():
 
     st.divider()
 
-    # ---- CHAT PANEL — NATURAL LANGUAGE QUERY ----
-    render_chat_panel(stats, role, industry)
+    # CHAT PANEL
+    render_chat_panel(stats, role, industry, df)
 
     st.divider()
 
-    # ---- FEEDBACK ----
+    # FEEDBACK
     st.markdown("### 💬 Was this analysis useful?")
     col1, col2 = st.columns(2)
     with col1:
         if st.button("👍 Yes — helpful", use_container_width=True):
             st.success("Thank you for your feedback!")
     with col2:
-        if st.button("👎 No — something was off", use_container_width=True):
+        if st.button(
+            "👎 No — something was off", use_container_width=True
+        ):
             feedback = st.text_area(
                 "What was missing or incorrect?",
                 placeholder="Tell us what the analysis missed..."
@@ -2100,8 +2597,8 @@ def screen_dashboard():
 
 def main():
     screen = get_current_screen()
-    if screen == "api_key":
-        screen_api_key()
+    if screen == "welcome":
+        screen_welcome()
     elif screen == "privacy":
         screen_privacy()
     elif screen == "data_source":
