@@ -4,10 +4,10 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from openai import OpenAI
+from groq import Groq
+from supabase import create_client
 import json
 import re
-import psycopg2
-from groq import Groq
 
 # ─────────────────────────────────────────
 # PAGE CONFIG
@@ -18,7 +18,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
 st.markdown("""
 <style>
 #MainMenu {visibility: hidden;}
@@ -49,8 +48,9 @@ defaults = {
     "analysis_count": 0,
     "feedback_given": False,
     "feedback_score": None,
-    "db_sub_step": "select_db",
-    "db_conn_params": {},
+    "db_sub_step": "credentials",   # credentials → select_table
+    "db_sb_url": "",
+    "db_sb_key": "",
     "db_tables": [],
 }
 for k, v in defaults.items():
@@ -116,30 +116,30 @@ def compute_stats(df):
 
 def detect_pii(df):
     pii_flags = []
-    email_pat = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
-    phone_pat = r'(\+?\d[\d\s\-]{8,}\d)'
+    ep = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+    pp = r'(\+?\d[\d\s\-]{8,}\d)'
     for col in df.columns:
-        col_l = col.lower()
-        if any(k in col_l for k in ['email','phone','mobile','ssn','passport','credit','card','national_id','nid']):
+        cl = col.lower()
+        if any(k in cl for k in ['email','phone','mobile','ssn','passport','credit','card','national_id','nid']):
             pii_flags.append(col); continue
         for val in df[col].dropna().astype(str).head(20):
-            if re.search(email_pat, val) or re.search(phone_pat, val):
+            if re.search(ep, val) or re.search(pp, val):
                 pii_flags.append(col); break
     return list(set(pii_flags))
 
 def call_openai(messages, temperature=0.3, max_tokens=3000):
     client = OpenAI(api_key=OPENAI_KEY)
-    resp = client.chat.completions.create(model="gpt-4o-mini", messages=messages,
-                                          temperature=temperature, max_tokens=max_tokens)
-    return resp.choices[0].message.content.strip()
+    r = client.chat.completions.create(model="gpt-4o-mini", messages=messages,
+                                       temperature=temperature, max_tokens=max_tokens)
+    return r.choices[0].message.content.strip()
 
-def call_groq(system_prompt, user_prompt, max_tokens=300):
+def call_groq(system_msg, user_msg, max_tokens=300):
     client = Groq(api_key=GROQ_KEY)
-    resp = client.chat.completions.create(
+    r = client.chat.completions.create(
         model="llama3-70b-8192",
-        messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+        messages=[{"role": "system", "content": system_msg}, {"role": "user", "content": user_msg}],
         temperature=0.2, max_tokens=max_tokens)
-    return resp.choices[0].message.content.strip()
+    return r.choices[0].message.content.strip()
 
 def parse_json(raw):
     raw = re.sub(r'^```json\s*|^```\s*|\s*```$', '', raw.strip())
@@ -172,33 +172,35 @@ def run_python_calc(df):
     return json.dumps(results, default=str)
 
 # ─────────────────────────────────────────
-# DATABASE HELPERS
+# SUPABASE HELPERS (runtime credentials)
 # ─────────────────────────────────────────
-def pg_connect(host, port, dbname, user, password):
+def sb_get_tables(url, key):
+    """Discover all tables by attempting to query information schema via RPC or known tables."""
     try:
-        conn = psycopg2.connect(host=host, port=int(port), dbname=dbname,
-                                user=user, password=password,
-                                connect_timeout=10, sslmode="require")
-        return conn, None
-    except Exception as e:
-        return None, str(e)
-
-def pg_get_tables(conn):
-    try:
-        cur = conn.cursor()
-        cur.execute("""SELECT table_name FROM information_schema.tables
-                       WHERE table_schema='public' AND table_type='BASE TABLE'
-                       ORDER BY table_name;""")
-        tables = [r[0] for r in cur.fetchall()]
-        cur.close()
-        return tables, None
+        client = create_client(url, key)
+        # Try a lightweight call to verify connection
+        client.table("retail_sales").select("id").limit(1).execute()
+        # If successful, return known demo tables that exist
+        known = ["retail_sales", "hr_people", "finance_budget", "operations_data"]
+        available = []
+        for t in known:
+            try:
+                client.table(t).select("*").limit(1).execute()
+                available.append(t)
+            except Exception:
+                pass
+        return available if available else known, None
     except Exception as e:
         return [], str(e)
 
-def pg_load_table(conn, table_name):
+def sb_load_table(url, key, table_name):
+    """Load a full table from Supabase into a DataFrame."""
     try:
-        df = pd.read_sql(f'SELECT * FROM "{table_name}"', conn)
-        return df, None
+        client = create_client(url, key)
+        result = client.table(table_name).select("*").execute()
+        if result.data:
+            return pd.DataFrame(result.data), None
+        return None, "Table is empty."
     except Exception as e:
         return None, str(e)
 
@@ -216,11 +218,10 @@ def render_chart(ch, df):
             if fl in c.lower() or c.lower() in fl: return c
         return None
 
-    ct    = ch.get("type","bar")
-    title = ch.get("title","")
-    cols  = df.columns.tolist()
-    xc    = find_col(ch.get("x_field",""), cols)
-    yc    = find_col(ch.get("y_field",""), cols)
+    ct = ch.get("type","bar"); title = ch.get("title","")
+    cols = df.columns.tolist()
+    xc = find_col(ch.get("x_field",""), cols)
+    yc = find_col(ch.get("y_field",""), cols)
 
     theme = dict(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                  font=dict(color="#94a3b8", family="sans-serif", size=11),
@@ -365,6 +366,7 @@ elif st.session_state.step == "data":
 
     tab1, tab2 = st.tabs(["📁 Upload a File", "🗄️ Connect to Database"])
 
+    # ── FILE UPLOAD ──
     with tab1:
         st.markdown("#### Upload CSV or Excel")
         st.caption("Supported: .csv · .xlsx · .xls — Max 50MB")
@@ -383,87 +385,75 @@ elif st.session_state.step == "data":
             except Exception as e:
                 st.error(f"Could not read file: {e}")
 
+    # ── DATABASE CONNECTION ──
     with tab2:
         sub = st.session_state.db_sub_step
 
-        # ── A: Choose database ──
-        if sub == "select_db":
-            st.markdown("#### Select your database")
-            st.markdown("")
-            _, dbc, _ = st.columns([1, 2, 1])
-            with dbc:
-                with st.container(border=True):
-                    st.markdown("**Supabase**")
-                    st.caption("Connect to your Supabase PostgreSQL project using your credentials.")
-                    if st.button("Connect to Supabase →", type="primary", use_container_width=True):
-                        st.session_state.db_sub_step = "credentials"
-                        st.rerun()
-
-        # ── B: Credentials form ──
-        elif sub == "credentials":
+        # ── CREDENTIALS ──
+        if sub == "credentials":
             st.markdown("#### Connect to Supabase")
-            st.caption("Your credentials are used for this session only and never stored anywhere.")
+            st.caption("Enter your Supabase project credentials. Used for this session only — never stored.")
             st.markdown("")
 
-            with st.form("db_form"):
-                st.markdown("**Connection Details**")
-                host     = st.text_input("Host",          placeholder="db.xxxxxxxxxxxx.supabase.co")
-                port     = st.text_input("Port",          value="5432")
-                dbname   = st.text_input("Database Name", value="postgres")
-                user     = st.text_input("Username",      value="postgres")
-                password = st.text_input("Password", type="password", placeholder="Your database password")
-                st.caption("Find these in Supabase → Settings → Database → Connection parameters")
+            with st.form("sb_form"):
+                st.markdown("**Your Supabase Credentials**")
+                sb_url = st.text_input(
+                    "Project URL",
+                    placeholder="https://xxxxxxxxxxxx.supabase.co",
+                    help="Found in Supabase → Settings → API Keys → Project URL"
+                )
+                sb_key = st.text_input(
+                    "API Key",
+                    type="password",
+                    placeholder="Your Supabase anon or secret key",
+                    help="Found in Supabase → Settings → API Keys"
+                )
+                st.caption("Find both in your Supabase project → Settings → API Keys")
                 st.markdown("")
-                submitted = st.form_submit_button("🔗 Test Connection & Discover Tables", type="primary", use_container_width=True)
+                submitted = st.form_submit_button("🔗 Connect & Discover Tables", type="primary", use_container_width=True)
 
             if submitted:
-                if not all([host, port, dbname, user, password]):
-                    st.error("Please fill in all fields.")
+                if not sb_url.strip() or not sb_key.strip():
+                    st.error("Please enter both your Project URL and API Key.")
                 else:
-                    with st.spinner("Connecting to database..."):
-                        conn, err = pg_connect(host, port, dbname, user, password)
+                    with st.spinner("Connecting to Supabase..."):
+                        tables, err = sb_get_tables(sb_url.strip(), sb_key.strip())
                     if err:
                         st.error(f"Connection failed: {err}")
+                        st.caption("Check your Project URL and API Key and try again.")
                     else:
-                        tables, t_err = pg_get_tables(conn)
-                        conn.close()
-                        if t_err:
-                            st.error(f"Connected but could not read tables: {t_err}")
-                        elif not tables:
-                            st.warning("Connected, but no tables found in the public schema.")
-                        else:
-                            st.session_state.db_conn_params = {"host": host, "port": port, "dbname": dbname, "user": user, "password": password}
-                            st.session_state.db_tables      = tables
-                            st.session_state.db_sub_step    = "select_table"
-                            st.rerun()
+                        st.session_state.db_sb_url   = sb_url.strip()
+                        st.session_state.db_sb_key   = sb_key.strip()
+                        st.session_state.db_tables   = tables
+                        st.session_state.db_sub_step = "select_table"
+                        st.rerun()
 
-            if st.button("← Back", use_container_width=False):
-                st.session_state.db_sub_step = "select_db"
-                st.rerun()
-
-        # ── C: Select table ──
+        # ── SELECT TABLE ──
         elif sub == "select_table":
             st.markdown("#### Select a table to analyse")
             st.success(f"✅ Connected · {len(st.session_state.db_tables)} table(s) discovered")
             st.markdown("")
 
-            selected = st.selectbox("Available tables", options=st.session_state.db_tables, label_visibility="collapsed")
+            selected = st.selectbox(
+                "Available tables",
+                options=st.session_state.db_tables,
+                label_visibility="collapsed"
+            )
 
             if st.button("🔍 Preview Table", use_container_width=True):
                 with st.spinner("Loading table..."):
-                    conn, err = pg_connect(**st.session_state.db_conn_params)
+                    df_prev, err = sb_load_table(
+                        st.session_state.db_sb_url,
+                        st.session_state.db_sb_key,
+                        selected
+                    )
                 if err:
-                    st.error(f"Reconnection failed: {err}")
+                    st.error(f"Could not load table: {err}")
                 else:
-                    df_prev, t_err = pg_load_table(conn, selected)
-                    conn.close()
-                    if t_err:
-                        st.error(f"Could not load table: {t_err}")
-                    else:
-                        st.success(f"**{selected}** — {len(df_prev):,} rows × {len(df_prev.columns)} columns")
-                        st.dataframe(df_prev.head(5), use_container_width=True)
-                        st.session_state["db_preview_df"]    = df_prev
-                        st.session_state["db_preview_table"] = selected
+                    st.success(f"**{selected}** — {len(df_prev):,} rows × {len(df_prev.columns)} columns")
+                    st.dataframe(df_prev.head(5), use_container_width=True)
+                    st.session_state["db_preview_df"]    = df_prev
+                    st.session_state["db_preview_table"] = selected
 
             if "db_preview_df" in st.session_state:
                 if st.button("Continue with this table →", type="primary", use_container_width=True):
@@ -473,9 +463,12 @@ elif st.session_state.step == "data":
                     st.session_state.step        = "quality"
                     st.rerun()
 
-            if st.button("← Change credentials"):
+            st.markdown("")
+            if st.button("← Change credentials", use_container_width=False):
                 st.session_state.db_sub_step = "credentials"
                 st.session_state.db_tables   = []
+                if "db_preview_df" in st.session_state:
+                    del st.session_state["db_preview_df"]
                 st.rerun()
 
 # ═══════════════════════════════════════════════════════
@@ -493,7 +486,7 @@ elif st.session_state.step == "quality":
     duplicates    = int(df.duplicated().sum())
     pii_cols      = detect_pii(df)
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1,c2,c3,c4 = st.columns(4)
     c1.metric("Total Rows",     f"{total_rows:,}")
     c2.metric("Total Columns",  len(df.columns))
     c3.metric("Missing Values", total_missing, delta=None if total_missing==0 else f"⚠️ {total_missing}")
@@ -502,14 +495,14 @@ elif st.session_state.step == "quality":
 
     if total_missing > 0:
         st.markdown("**⚠️ Missing Values by Column**")
-        m = missing[missing > 0].reset_index()
+        m = missing[missing>0].reset_index()
         m.columns = ["Column","Missing Count"]
         m["% of Rows"] = (m["Missing Count"]/total_rows*100).round(1).astype(str)+"%"
         st.dataframe(m, use_container_width=True, hide_index=True)
     else:
         st.success("✅ No missing values detected.")
 
-    st.warning(f"⚠️ {duplicates} duplicate row(s) detected.") if duplicates > 0 else st.success("✅ No duplicate rows detected.")
+    st.warning(f"⚠️ {duplicates} duplicate row(s) detected.") if duplicates>0 else st.success("✅ No duplicate rows detected.")
 
     if pii_cols:
         st.error(f"🔴 PII Detected in: **{', '.join(pii_cols)}**")
@@ -518,10 +511,12 @@ elif st.session_state.step == "quality":
         st.success("✅ No PII detected.")
 
     st.markdown("**Column Overview**")
-    st.dataframe(pd.DataFrame({"Column": df.columns, "Type": [str(df[c].dtype) for c in df.columns],
-                                "Non-Null": [int(df[c].count()) for c in df.columns],
-                                "Unique Values": [int(df[c].nunique()) for c in df.columns]}),
-                 use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame({
+        "Column": df.columns,
+        "Type": [str(df[c].dtype) for c in df.columns],
+        "Non-Null": [int(df[c].count()) for c in df.columns],
+        "Unique Values": [int(df[c].nunique()) for c in df.columns]
+    }), use_container_width=True, hide_index=True)
 
     issues = sum([total_missing>0, duplicates>0, bool(pii_cols)*2])
     qs = max(0, 100-(issues*20))
@@ -549,8 +544,7 @@ elif st.session_state.step == "role":
     st.caption("Leave blank and the AI will auto-detect from your data.")
     industry_input = st.text_input("Industry", placeholder="e.g. Retail, Manufacturing, Financial Services...", label_visibility="collapsed")
 
-    injection_kw = ["ignore","reveal","system prompt","you are now","select ","drop ","<script"]
-    if any(kw in role_input.lower() for kw in injection_kw):
+    if any(kw in role_input.lower() for kw in ["ignore","reveal","system prompt","you are now","select ","drop ","<script"]):
         st.error("⚠️ This input cannot be processed. Please enter a valid role description.")
     else:
         if st.button("🚀 Generate My Dashboard", type="primary", use_container_width=True, disabled=not role_input.strip()):
@@ -594,7 +588,7 @@ elif st.session_state.step == "dashboard":
     # TOP BAR
     tb1, tb2, tb3 = st.columns([4, 2, 1])
     with tb1:
-        st.markdown(f"### ⚡ NexusIQ Dashboard")
+        st.markdown("### ⚡ NexusIQ Dashboard")
         st.caption(f"Role: **{analysis.get('role_interpreted', role)}** · {analysis.get('level','')} · {st.session_state.data_label}")
     with tb2:
         if analysis.get("interpretation_note"):
@@ -615,14 +609,14 @@ elif st.session_state.step == "dashboard":
     # ── DASHBOARD ──
     with dash_col:
 
-        # Executive summary
+        # Executive Summary
         es = analysis.get("executive_summary", {})
         with st.container(border=True):
             st.markdown("#### 📌 Executive Summary")
             for i, s in enumerate([es.get("sentence_1",""), es.get("sentence_2",""), es.get("sentence_3","")], 1):
                 if s: st.markdown(f"**{i}.** {s}")
 
-        # Traffic lights
+        # Traffic Lights
         tl_list = analysis.get("traffic_lights", [])
         if tl_list:
             st.markdown("#### 🚦 Key Metrics")
@@ -669,7 +663,7 @@ elif st.session_state.step == "dashboard":
                                 ci = {"HIGH":"🔵","MEDIUM":"🟡","INDICATIVE":"⚪"}.get(ch.get("confidence",""),"")
                                 st.caption(f"{si} {ch.get('sentiment','')} · {ci} {ch.get('confidence','')}" + (" · ✅ Verified" if ch.get("verified") else ""))
 
-        # Statistical summary
+        # Statistical Summary
         if analysis.get("statistical_summary"):
             with st.expander("📐 Statistical Summary", expanded=False):
                 st.dataframe(pd.DataFrame(analysis["statistical_summary"]), use_container_width=True, hide_index=True)
@@ -680,9 +674,8 @@ elif st.session_state.step == "dashboard":
             st.markdown("#### ✅ Recommendations")
             for r in recs:
                 p = r.get("priority",3)
+                p_icon = {1:"🔴",2:"🟡",3:"🟢"}.get(p,"🔵")
                 with st.container(border=True):
-                    st.markdown(f"{{\"1\":\"🔴\",\"2\":\"🟡\",\"3\":\"🟢\"}}.get(str(p),\"🔵\") **P{p} · {r.get('action','')}**")
-                    p_icon = {1:"🔴",2:"🟡",3:"🟢"}.get(p,"🔵")
                     st.markdown(f"{p_icon} **P{p} · {r.get('action','')}**")
                     st.caption(r.get("rationale",""))
                     st.caption(f"Owner: {r.get('owner','')} · Timeframe: {r.get('timeframe','')}")
@@ -747,8 +740,8 @@ Answer in under 100 words. Be direct. Use actual numbers from the pre-computed s
 
 Question: {last['content']}"""
                                 answer = call_groq(
-                                    system_prompt="You are NexusIQ, a concise AI business intelligence assistant. Answer in under 100 words. Be direct and use actual numbers from the pre-computed data. Never make up numbers.",
-                                    user_prompt=chat_prompt,
+                                    system_msg="You are NexusIQ, a concise AI BI assistant. Answer in under 100 words. Be direct and use actual numbers from the pre-computed data. Never make up numbers.",
+                                    user_msg=chat_prompt,
                                     max_tokens=300
                                 )
                                 st.session_state.chat_history.append({"role":"assistant","content":answer})

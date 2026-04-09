@@ -179,7 +179,7 @@ def sb_get_tables(url, key):
     try:
         client = create_client(url, key)
         # Try a lightweight call to verify connection
-        client.table("retail_sales").select("id").limit(1).execute()
+        client.table("retail_sales").select("*").limit(1).execute()
         # If successful, return known demo tables that exist
         known = ["retail_sales", "hr_people", "finance_budget", "operations_data"]
         available = []
