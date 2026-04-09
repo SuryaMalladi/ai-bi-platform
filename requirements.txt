@@ -1,6 +1,6 @@
 streamlit
 openai
 pandas
-openpyxl
-xlrd
+numpy
 plotly
+openpyxl
