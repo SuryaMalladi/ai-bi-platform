@@ -884,7 +884,7 @@ Answer this question in a concise, role-appropriate way. Use the pre-computed st
 
 Question: {last_msg['content']}"""
 
-                                answer = call_gemini(chat_prompt)
+                                answer = call_openai([{"role": "system", "content": "You are NexusIQ, a concise BI assistant. Answer in under 100 words. Be direct and use actual numbers from the pre-computed data."}, {"role": "user", "content": chat_prompt}], temperature=0.2, max_tokens=200)
                                 st.session_state.chat_history.append({"role": "assistant", "content": answer})
                                 st.rerun()
                             except Exception as e:
