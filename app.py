@@ -136,7 +136,7 @@ def call_openai(messages, temperature=0.3, max_tokens=3000):
 def call_groq(system_msg, user_msg, max_tokens=300):
     client = Groq(api_key=GROQ_KEY)
     r = client.chat.completions.create(
-        model="llama3-70b-8192",
+        model="llama-3.3-70b-versatile",
         messages=[{"role": "system", "content": system_msg}, {"role": "user", "content": user_msg}],
         temperature=0.2, max_tokens=max_tokens)
     return r.choices[0].message.content.strip()
