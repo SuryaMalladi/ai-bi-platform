@@ -189,7 +189,7 @@ def call_openai(messages, temperature=0.3, max_tokens=3000):
 def call_gemini(prompt):
     """Call Gemini Flash for chat responses."""
     genai.configure(api_key=GEMINI_KEY)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-2.0-flash")
     response = model.generate_content(prompt)
     return response.text.strip()
 
