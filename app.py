@@ -146,170 +146,51 @@ def show_progress(current_step):
 # ============================================================
 
 def screen_welcome():
-    # Full-page enterprise welcome — no sidebar, no progress bar
+    st.markdown(
+        "<link href='https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400&display=swap' rel='stylesheet'>",
+        unsafe_allow_html=True
+    )
+
     st.markdown("""
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400&display=swap');
+<div style="min-height:88vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;background:linear-gradient(160deg,#0a0f1e 0%,#0d1b2a 50%,#0a1628 100%);border-radius:16px;">
 
-        .welcome-wrap {
-            min-height: 92vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 60px 20px;
-            background: linear-gradient(160deg, #0a0f1e 0%, #0d1b2a 50%, #0a1628 100%);
-            border-radius: 16px;
-            position: relative;
-            overflow: hidden;
-        }
+  <div style="font-family:'DM Mono',monospace;font-size:11px;letter-spacing:0.35em;color:#3b82f6;text-transform:uppercase;margin-bottom:48px;">
+    ◈ &nbsp; Enterprise Intelligence
+  </div>
 
-        .welcome-wrap::before {
-            content: '';
-            position: absolute;
-            top: -200px; left: -200px;
-            width: 600px; height: 600px;
-            background: radial-gradient(circle, rgba(59,130,246,0.06) 0%, transparent 70%);
-            pointer-events: none;
-        }
+  <div style="font-family:'Cormorant Garamond',serif;font-size:80px;font-weight:300;color:#f0f4ff;text-align:center;line-height:1.05;letter-spacing:-0.02em;margin-bottom:8px;">
+    Nexus<span style="color:#3b82f6;font-weight:600;">IQ</span>
+  </div>
 
-        .welcome-wrap::after {
-            content: '';
-            position: absolute;
-            bottom: -150px; right: -150px;
-            width: 500px; height: 500px;
-            background: radial-gradient(circle, rgba(99,102,241,0.05) 0%, transparent 70%);
-            pointer-events: none;
-        }
+  <div style="width:48px;height:1px;background:linear-gradient(90deg,transparent,#3b82f6,transparent);margin:32px auto;"></div>
 
-        .brand-mark {
-            font-family: 'DM Mono', monospace;
-            font-size: 11px;
-            letter-spacing: 0.35em;
-            color: #3b82f6;
-            text-transform: uppercase;
-            margin-bottom: 48px;
-            opacity: 0.9;
-        }
+  <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:300;color:#94a3b8;text-align:center;font-style:italic;letter-spacing:0.02em;margin-bottom:48px;">
+    Every dataset. Every role. Every decision — illuminated.
+  </div>
 
-        .welcome-title {
-            font-family: 'Cormorant Garamond', serif;
-            font-size: clamp(52px, 7vw, 88px);
-            font-weight: 300;
-            color: #f0f4ff;
-            text-align: center;
-            line-height: 1.05;
-            letter-spacing: -0.02em;
-            margin-bottom: 8px;
-        }
+  <div style="font-family:'DM Sans',sans-serif;font-size:15px;font-weight:300;color:#64748b;text-align:center;line-height:1.8;max-width:560px;margin-bottom:64px;">
+    A production-grade AI platform that reads your data and your role,
+    then generates a complete intelligence briefing built specifically
+    for how you think and what you need to decide.
+  </div>
 
-        .welcome-title span {
-            color: #3b82f6;
-            font-weight: 600;
-        }
+  <div style="display:flex;gap:16px;margin-bottom:64px;flex-wrap:wrap;justify-content:center;">
+    <span style="font-family:'DM Sans',sans-serif;font-size:11px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:#475569;border:1px solid #1e293b;padding:8px 18px;border-radius:100px;">Dynamic Role Intelligence</span>
+    <span style="font-family:'DM Sans',sans-serif;font-size:11px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:#475569;border:1px solid #1e293b;padding:8px 18px;border-radius:100px;">Zero Templates</span>
+    <span style="font-family:'DM Sans',sans-serif;font-size:11px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:#475569;border:1px solid #1e293b;padding:8px 18px;border-radius:100px;">Executive to Frontline</span>
+    <span style="font-family:'DM Sans',sans-serif;font-size:11px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:#475569;border:1px solid #1e293b;padding:8px 18px;border-radius:100px;">Natural Language Query</span>
+    <span style="font-family:'DM Sans',sans-serif;font-size:11px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:#475569;border:1px solid #1e293b;padding:8px 18px;border-radius:100px;">GDPR Aware</span>
+  </div>
 
-        .welcome-divider {
-            width: 48px;
-            height: 1px;
-            background: linear-gradient(90deg, transparent, #3b82f6, transparent);
-            margin: 32px auto;
-        }
+  <div style="font-family:'DM Mono',monospace;font-size:10px;color:#1e3a5f;letter-spacing:0.2em;text-transform:uppercase;">
+    Phase 1 · Recruiter Demo · v1.0
+  </div>
 
-        .welcome-tagline {
-            font-family: 'Cormorant Garamond', serif;
-            font-size: clamp(18px, 2.5vw, 24px);
-            font-weight: 300;
-            color: #94a3b8;
-            text-align: center;
-            font-style: italic;
-            letter-spacing: 0.02em;
-            margin-bottom: 48px;
-            max-width: 640px;
-        }
-
-        .welcome-desc {
-            font-family: 'DM Sans', sans-serif;
-            font-size: 15px;
-            font-weight: 300;
-            color: #64748b;
-            text-align: center;
-            line-height: 1.8;
-            max-width: 560px;
-            margin-bottom: 64px;
-        }
-
-        .feature-row {
-            display: flex;
-            gap: 24px;
-            margin-bottom: 64px;
-            flex-wrap: wrap;
-            justify-content: center;
-        }
-
-        .feature-pill {
-            font-family: 'DM Sans', sans-serif;
-            font-size: 11px;
-            font-weight: 500;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            color: #475569;
-            border: 1px solid #1e293b;
-            padding: 8px 18px;
-            border-radius: 100px;
-            background: rgba(255,255,255,0.02);
-        }
-
-        .welcome-cta-wrap {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .version-tag {
-            font-family: 'DM Mono', monospace;
-            font-size: 10px;
-            color: #1e3a5f;
-            letter-spacing: 0.2em;
-            margin-top: 48px;
-            text-transform: uppercase;
-        }
-        </style>
-
-        <div class="welcome-wrap">
-            <div class="brand-mark">◈ &nbsp; Enterprise Intelligence</div>
-
-            <div class="welcome-title">
-                Nexus<span>IQ</span>
-            </div>
-
-            <div class="welcome-divider"></div>
-
-            <div class="welcome-tagline">
-                Every dataset. Every role. Every decision — illuminated.
-            </div>
-
-            <div class="welcome-desc">
-                A production-grade AI platform that reads your data and your role,
-                then generates a complete intelligence briefing built specifically
-                for how you think and what you need to decide.
-            </div>
-
-            <div class="feature-row">
-                <div class="feature-pill">Dynamic Role Intelligence</div>
-                <div class="feature-pill">Zero Templates</div>
-                <div class="feature-pill">Executive to Frontline</div>
-                <div class="feature-pill">Natural Language Query</div>
-                <div class="feature-pill">GDPR Aware</div>
-            </div>
-
-            <div class="version-tag">Phase 1 · Recruiter Demo · v1.0</div>
-        </div>
-    """, unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # CTA button — native Streamlit, centred
     col1, col2, col3 = st.columns([2, 1, 2])
     with col2:
         if st.button(
@@ -317,7 +198,6 @@ def screen_welcome():
             type="primary",
             use_container_width=True
         ):
-            # Validate keys exist before proceeding
             if not st.session_state.openai_key:
                 st.error(
                     "Platform configuration incomplete. "
@@ -326,12 +206,6 @@ def screen_welcome():
             else:
                 st.session_state.welcome_done = True
                 st.rerun()
-
-
-# ============================================================
-# SCREEN 2 — PRIVACY
-# ============================================================
-
 def screen_privacy():
     show_progress("privacy")
     st.markdown("## 📋 Data Privacy Notice")
