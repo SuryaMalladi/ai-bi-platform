@@ -1,3 +1,5 @@
+# app.py — AI Intelligence Platform — Complete with NL Chat Interface
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -54,6 +56,9 @@ def init_session_state():
         "role_profile": None,
         "show_narrative": False,
         "analysis_count": 0,
+        "chat_history": [],
+        "suggested_questions": [],
+        "chat_input_key": 0,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -479,7 +484,6 @@ def detect_industry_from_columns(df):
 def build_role_profile(user_role, industry, df):
     role_lower = user_role.lower()
 
-    # --- SENIORITY ---
     level = "L2"
     l1_keywords = [
         "ceo", "cfo", "coo", "cmo", "cto", "chro", "cpo", "cco",
@@ -516,7 +520,6 @@ def build_role_profile(user_role, industry, df):
     elif any(kw in role_lower for kw in l3_keywords):
         level = "L3"
 
-    # --- FUNCTION ---
     function = "General Management"
     if any(k in role_lower for k in [
         "cfo", "finance", "financial", "fd", "treasurer",
@@ -548,7 +551,6 @@ def build_role_profile(user_role, industry, df):
     ]):
         function = "Executive"
 
-    # --- GOVERNING QUESTION ---
     governing_questions = {
         "L1": "What does this mean for the organisation as a whole and what strategic decisions must I make now?",
         "L2": "What should I focus on this month, what is at risk, and what do I need to escalate or delegate?",
@@ -556,11 +558,8 @@ def build_role_profile(user_role, industry, df):
         "L4F": "What is the number and what specific action do I take today?",
         "L4A": "What does this data show statistically and what are the methodological caveats?",
     }
-    governing_question = governing_questions.get(
-        level, governing_questions["L2"]
-    )
+    governing_question = governing_questions.get(level, governing_questions["L2"])
 
-    # --- LANGUAGE RULES ---
     language_rules = {
         "L1": "Max 20 words per sentence. Strategic headlines only. No operational detail. No hedging. Decisive. Translate numbers to business impact.",
         "L2": "Max 25 words per sentence. Performance vs target focus. Always state variance with baseline. Businesslike and direct.",
@@ -570,121 +569,45 @@ def build_role_profile(user_role, industry, df):
     }
     language_rule = language_rules.get(level, language_rules["L2"])
 
-    # --- UNIVERSAL EXCLUSIONS ---
-    # Only true junk columns — never categorical business columns
     universal_exclusions = [
         "row id", "order id", "customer id", "customer name",
         "postal code", "product id", "country"
     ]
 
-    # --- ROLE-SPECIFIC SETTINGS ---
     if level == "L1" and function == "Executive":
-        inclusions = [
-            "sales", "profit", "margin", "cost",
-            "shipping", "discount", "revenue"
-        ]
+        inclusions = ["sales", "profit", "margin", "cost", "shipping", "discount", "revenue"]
         exclusions = universal_exclusions
-        kpi_focus = [
-            "Total Revenue", "Total Profit",
-            "Profit Margin %", "Shipping Cost Total"
-        ]
-        chart_focus = [
-            "Profit by category",
-            "Sales trend over time",
-            "Sales vs profit by segment",
-            "Shipping cost by category"
-        ]
-
+        kpi_focus = ["Total Revenue", "Total Profit", "Profit Margin %", "Shipping Cost Total"]
+        chart_focus = ["Profit by category", "Sales trend over time", "Sales vs profit by segment", "Shipping cost by category"]
     elif function == "Finance" and level in ["L1", "L2"]:
-        inclusions = [
-            "sales", "profit", "margin", "discount",
-            "shipping", "cost", "revenue"
-        ]
+        inclusions = ["sales", "profit", "margin", "discount", "shipping", "cost", "revenue"]
         exclusions = universal_exclusions
-        kpi_focus = [
-            "Total Revenue", "Total Profit",
-            "Profit Margin %", "Total Discount Impact",
-            "Shipping Cost Total"
-        ]
-        chart_focus = [
-            "Profit margin by category",
-            "Discount impact on profit",
-            "Shipping cost by category",
-            "Revenue vs profit over time"
-        ]
-
-    elif function == "Sales" or (
-        "sales" in role_lower and level in ["L2", "L3"]
-    ):
-        inclusions = [
-            "sales", "profit", "quantity", "discount",
-            "shipping", "revenue", "target"
-        ]
+        kpi_focus = ["Total Revenue", "Total Profit", "Profit Margin %", "Total Discount Impact", "Shipping Cost Total"]
+        chart_focus = ["Profit margin by category", "Discount impact on profit", "Shipping cost by category", "Revenue vs profit over time"]
+    elif function == "Sales" or ("sales" in role_lower and level in ["L2", "L3"]):
+        inclusions = ["sales", "profit", "quantity", "discount", "shipping", "revenue", "target"]
         exclusions = universal_exclusions
-        kpi_focus = [
-            "Total Sales", "Average Order Value",
-            "Total Orders", "Profit per Order"
-        ]
-        chart_focus = [
-            "Sales by region",
-            "Sales by category",
-            "Sales trend over time",
-            "Profit by segment"
-        ]
-
+        kpi_focus = ["Total Sales", "Average Order Value", "Total Orders", "Profit per Order"]
+        chart_focus = ["Sales by region", "Sales by category", "Sales trend over time", "Profit by segment"]
     elif function == "HR":
-        inclusions = [
-            "attrition", "salary", "performance", "tenure",
-            "satisfaction", "headcount", "absence", "engagement"
-        ]
-        exclusions = universal_exclusions + [
-            "sales", "profit", "shipping", "product"
-        ]
-        kpi_focus = [
-            "Attrition Rate", "Average Tenure",
-            "Headcount", "Average Satisfaction"
-        ]
-        chart_focus = [
-            "Attrition by department",
-            "Satisfaction distribution",
-            "Tenure vs performance",
-            "Headcount trend"
-        ]
-
+        inclusions = ["attrition", "salary", "performance", "tenure", "satisfaction", "headcount", "absence", "engagement"]
+        exclusions = universal_exclusions + ["sales", "profit", "shipping", "product"]
+        kpi_focus = ["Attrition Rate", "Average Tenure", "Headcount", "Average Satisfaction"]
+        chart_focus = ["Attrition by department", "Satisfaction distribution", "Tenure vs performance", "Headcount trend"]
     elif function == "Operations":
-        inclusions = [
-            "units", "defects", "downtime", "efficiency",
-            "cycle", "throughput", "yield", "output"
-        ]
-        exclusions = universal_exclusions + [
-            "customer", "revenue", "marketing"
-        ]
-        kpi_focus = [
-            "Overall Efficiency %", "Total Defects",
-            "Total Downtime", "Output vs Target"
-        ]
-        chart_focus = [
-            "Efficiency trend over time",
-            "Defect rate by line",
-            "Downtime breakdown",
-            "Output vs target"
-        ]
-
+        inclusions = ["units", "defects", "downtime", "efficiency", "cycle", "throughput", "yield", "output"]
+        exclusions = universal_exclusions + ["customer", "revenue", "marketing"]
+        kpi_focus = ["Overall Efficiency %", "Total Defects", "Total Downtime", "Output vs Target"]
+        chart_focus = ["Efficiency trend over time", "Defect rate by line", "Downtime breakdown", "Output vs target"]
     else:
-        inclusions = [
-            "sales", "revenue", "profit", "cost",
-            "target", "performance", "margin"
-        ]
+        inclusions = ["sales", "revenue", "profit", "cost", "target", "performance", "margin"]
         exclusions = universal_exclusions
         kpi_focus = ["Total Revenue", "Total Profit", "Key Variance"]
         chart_focus = ["Performance trend", "Key metric breakdown"]
 
     stats_depth = {
-        "L1": "headline",
-        "L2": "moderate",
-        "L3": "moderate",
-        "L4F": "outputs_only",
-        "L4A": "full",
+        "L1": "headline", "L2": "moderate", "L3": "moderate",
+        "L4F": "outputs_only", "L4A": "full",
     }.get(level, "moderate")
 
     return {
@@ -724,17 +647,13 @@ def screen_role_input():
 
     msg = (
         f"We detected: **{detected}**" +
-        (f" with elements of: **{', '.join(secondary)}**"
-         if secondary else "")
+        (f" with elements of: **{', '.join(secondary)}**" if secondary else "")
     )
     st.info(f"🔍 {msg}")
 
     industry_choice = st.radio(
         "Is this correct?",
-        options=[
-            f"✅ Yes — {detected} is correct",
-            "✏️ No — I will describe it myself"
-        ],
+        options=[f"✅ Yes — {detected} is correct", "✏️ No — I will describe it myself"],
         index=0
     )
 
@@ -767,10 +686,7 @@ def screen_role_input():
     role_is_safe = True
     if user_role:
         if any(kw in user_role.lower() for kw in injection_keywords):
-            st.error(
-                "⚠️ This input cannot be processed. "
-                "Please enter a valid role."
-            )
+            st.error("⚠️ This input cannot be processed. Please enter a valid role.")
             role_is_safe = False
 
     if user_role and role_is_safe and len(user_role) > 2:
@@ -784,9 +700,7 @@ def screen_role_input():
             st.info(f"**Function:** {profile['function']}")
         with col3:
             st.info(f"**Depth:** {profile['stats_depth']}")
-        st.caption(
-            f"🎯 Governing question: *{profile['governing_question']}*"
-        )
+        st.caption(f"🎯 Governing question: *{profile['governing_question']}*")
 
     st.markdown("---")
     button_ready = user_role and role_is_safe and confirmed_industry
@@ -804,11 +718,14 @@ def screen_role_input():
         st.session_state.precomputed_stats = None
         st.session_state.role_profile = None
         st.session_state.show_narrative = False
+        st.session_state.chat_history = []
+        st.session_state.suggested_questions = []
+        st.session_state.chat_input_key = 0
         st.rerun()
 
 
 # ============================================================
-# COLUMN RELEVANCE — ROLE PROFILE DRIVEN
+# COLUMN RELEVANCE
 # ============================================================
 
 def get_relevant_columns(df, role_profile):
@@ -819,12 +736,9 @@ def get_relevant_columns(df, role_profile):
     meaningful = []
     for col in df.columns:
         col_lower = col.lower()
-
         if any(ex in col_lower for ex in exclusions):
             continue
-
         series = df[col]
-
         if pd.api.types.is_numeric_dtype(series):
             non_null = series.dropna()
             if len(non_null) > 0 and non_null.std() > 0:
@@ -837,17 +751,11 @@ def get_relevant_columns(df, role_profile):
             meaningful.append(col)
 
     if level == "L1":
-        priority = [
-            col for col in meaningful
-            if any(inc in col.lower() for inc in inclusions)
-        ]
+        priority = [col for col in meaningful if any(inc in col.lower() for inc in inclusions)]
         others = [col for col in meaningful if col not in priority]
         role_relevant = priority + others
     else:
-        priority = [
-            col for col in meaningful
-            if any(inc in col.lower() for inc in inclusions)
-        ]
+        priority = [col for col in meaningful if any(inc in col.lower() for inc in inclusions)]
         others = [col for col in meaningful if col not in priority]
         role_relevant = priority + others[:5]
 
@@ -876,20 +784,10 @@ def precompute_statistics(df, relevant_cols, role_profile, df_name="Dataset"):
         "period_info": None,
     }
 
-    numeric_cols = [
-        c for c in relevant_cols
-        if pd.api.types.is_numeric_dtype(df[c])
-    ]
-    categorical_cols = [
-        c for c in relevant_cols
-        if pd.api.types.is_object_dtype(df[c])
-    ]
-    date_cols = [
-        c for c in df.columns
-        if 'date' in c.lower() or 'time' in c.lower()
-    ]
+    numeric_cols = [c for c in relevant_cols if pd.api.types.is_numeric_dtype(df[c])]
+    categorical_cols = [c for c in relevant_cols if pd.api.types.is_object_dtype(df[c])]
+    date_cols = [c for c in df.columns if 'date' in c.lower() or 'time' in c.lower()]
 
-    # Numeric stats
     for col in numeric_cols:
         series = df[col].dropna()
         if len(series) == 0:
@@ -905,33 +803,20 @@ def precompute_statistics(df, relevant_cols, role_profile, df_name="Dataset"):
             "total": round(float(series.sum()), 2),
             "count": int(len(series)),
             "missing": int(df[col].isnull().sum()),
-            "outlier_count": int(
-                ((series - mean_val).abs() > 2 * std_val).sum()
-            ) if std_val > 0 else 0,
+            "outlier_count": int(((series - mean_val).abs() > 2 * std_val).sum()) if std_val > 0 else 0,
         }
 
-    # Target vs actual
     target_keywords = ['target', 'budget', 'plan', 'quota', 'forecast']
-    actual_keywords = [
-        'actual', 'sales', 'revenue', 'spend', 'achieved'
-    ]
-    target_cols = [
-        c for c in numeric_cols
-        if any(kw in c.lower() for kw in target_keywords)
-    ]
-    actual_cols = [
-        c for c in numeric_cols
-        if any(kw in c.lower() for kw in actual_keywords)
-    ]
+    actual_keywords = ['actual', 'sales', 'revenue', 'spend', 'achieved']
+    target_cols = [c for c in numeric_cols if any(kw in c.lower() for kw in target_keywords)]
+    actual_cols = [c for c in numeric_cols if any(kw in c.lower() for kw in actual_keywords)]
     for t_col in target_cols:
         for a_col in actual_cols:
             if t_col != a_col:
                 t_total = df[t_col].sum()
                 a_total = df[a_col].sum()
                 if t_total > 0:
-                    variance_pct = round(
-                        ((a_total - t_total) / t_total) * 100, 2
-                    )
+                    variance_pct = round(((a_total - t_total) / t_total) * 100, 2)
                     key = f"{a_col}_vs_{t_col}"
                     stats["target_vs_actual"][key] = {
                         "actual_col": a_col,
@@ -939,55 +824,34 @@ def precompute_statistics(df, relevant_cols, role_profile, df_name="Dataset"):
                         "actual_total": round(float(a_total), 2),
                         "target_total": round(float(t_total), 2),
                         "variance_pct": variance_pct,
-                        "variance_abs": round(
-                            float(a_total - t_total), 2
-                        ),
-                        "status": (
-                            "GREEN" if variance_pct >= -5
-                            else "AMBER" if variance_pct >= -15
-                            else "RED"
-                        )
+                        "variance_abs": round(float(a_total - t_total), 2),
+                        "status": ("GREEN" if variance_pct >= -5 else "AMBER" if variance_pct >= -15 else "RED")
                     }
 
-    # Categorical breakdowns
     max_categories = 5 if level == "L1" else 15
     for col in categorical_cols:
         value_counts = df[col].value_counts()
         breakdown = {}
         for numeric_col in numeric_cols[:4]:
             try:
-                group = df.groupby(col)[numeric_col].agg(
-                    ['sum', 'mean', 'count']
-                )
+                group = df.groupby(col)[numeric_col].agg(['sum', 'mean', 'count'])
                 breakdown[numeric_col] = {
-                    str(k): {
-                        "sum": round(float(v['sum']), 2),
-                        "mean": round(float(v['mean']), 2),
-                        "count": int(v['count'])
-                    }
-                    for k, v in list(
-                        group.iterrows()
-                    )[:max_categories]
+                    str(k): {"sum": round(float(v['sum']), 2), "mean": round(float(v['mean']), 2), "count": int(v['count'])}
+                    for k, v in list(group.iterrows())[:max_categories]
                 }
             except Exception:
                 pass
         stats["categorical_stats"][col] = {
             "unique_values": int(value_counts.nunique()),
-            "top_values": {
-                str(k): int(v)
-                for k, v in value_counts.head(max_categories).items()
-            },
+            "top_values": {str(k): int(v) for k, v in value_counts.head(max_categories).items()},
             "breakdown": breakdown
         }
 
-    # Time series
     if date_cols:
         date_col = date_cols[0]
         try:
             df_copy = df.copy()
-            df_copy[date_col] = pd.to_datetime(
-                df_copy[date_col], errors='coerce'
-            )
+            df_copy[date_col] = pd.to_datetime(df_copy[date_col], errors='coerce')
             df_copy = df_copy.dropna(subset=[date_col])
             if len(df_copy) > 0:
                 min_date = df_copy[date_col].min()
@@ -998,22 +862,16 @@ def precompute_statistics(df, relevant_cols, role_profile, df_name="Dataset"):
                     "to": str(max_date.date()),
                     "days": (max_date - min_date).days
                 }
-                df_copy['_period'] = df_copy[
-                    date_col
-                ].dt.to_period('M')
+                df_copy['_period'] = df_copy[date_col].dt.to_period('M')
                 for col in numeric_cols[:4]:
                     try:
                         monthly = df_copy.groupby('_period')[col].sum()
-                        stats["time_series"][col] = {
-                            str(k): round(float(v), 2)
-                            for k, v in monthly.items()
-                        }
+                        stats["time_series"][col] = {str(k): round(float(v), 2) for k, v in monthly.items()}
                     except Exception:
                         pass
         except Exception:
             pass
 
-    # Anomalies
     for col in numeric_cols:
         series = df[col].dropna()
         if len(series) < 5:
@@ -1027,14 +885,11 @@ def precompute_statistics(df, relevant_cols, role_profile, df_name="Dataset"):
             stats["anomalies"].append({
                 "column": col,
                 "outlier_count": len(outliers),
-                "outlier_values": [
-                    round(float(v), 2) for v in outliers.head(3)
-                ],
+                "outlier_values": [round(float(v), 2) for v in outliers.head(3)],
                 "mean": round(float(mean_val), 2),
                 "std": round(float(std_val), 2),
             })
 
-    # Correlations
     if level == "L4A" or len(numeric_cols) <= 6:
         if len(numeric_cols) >= 2:
             try:
@@ -1043,16 +898,11 @@ def precompute_statistics(df, relevant_cols, role_profile, df_name="Dataset"):
                 for i in range(len(numeric_cols)):
                     for j in range(i + 1, len(numeric_cols)):
                         corr_val = corr_matrix.iloc[i, j]
-                        if (
-                            abs(corr_val) >= 0.6 and
-                            not np.isnan(corr_val)
-                        ):
+                        if abs(corr_val) >= 0.6 and not np.isnan(corr_val):
                             strong_corrs.append({
                                 "col1": numeric_cols[i],
                                 "col2": numeric_cols[j],
-                                "correlation": round(
-                                    float(corr_val), 3
-                                )
+                                "correlation": round(float(corr_val), 3)
                             })
                 stats["correlations"] = strong_corrs
             except Exception:
@@ -1068,10 +918,8 @@ def precompute_statistics(df, relevant_cols, role_profile, df_name="Dataset"):
 def precompute_comparison(df1, df2, role_profile, name1, name2):
     relevant1 = get_relevant_columns(df1, role_profile)
     common_cols = [c for c in relevant1 if c in df2.columns]
-
     stats1 = precompute_statistics(df1, common_cols, role_profile, name1)
     stats2 = precompute_statistics(df2, common_cols, role_profile, name2)
-
     comparison = {
         "dataset1_name": name1,
         "dataset2_name": name2,
@@ -1080,25 +928,17 @@ def precompute_comparison(df1, df2, role_profile, name1, name2):
         "declined": [],
         "stable": [],
     }
-
     numeric_cols = [
         c for c in common_cols
-        if pd.api.types.is_numeric_dtype(df1[c])
-        and c in df2.columns
-        and pd.api.types.is_numeric_dtype(df2[c])
+        if pd.api.types.is_numeric_dtype(df1[c]) and c in df2.columns and pd.api.types.is_numeric_dtype(df2[c])
     ]
-
     for col in numeric_cols:
         val1 = stats1["numeric_stats"].get(col, {}).get("total", 0)
         val2 = stats2["numeric_stats"].get(col, {}).get("total", 0)
         if val1 == 0:
             continue
         change_pct = round(((val2 - val1) / abs(val1)) * 100, 2)
-        direction = (
-            "improved" if change_pct > 2
-            else "declined" if change_pct < -2
-            else "stable"
-        )
+        direction = ("improved" if change_pct > 2 else "declined" if change_pct < -2 else "stable")
         comparison["numeric_comparison"][col] = {
             "dataset1_total": val1,
             "dataset2_total": val2,
@@ -1111,25 +951,18 @@ def precompute_comparison(df1, df2, role_profile, name1, name2):
             comparison["declined"].append(col)
         else:
             comparison["stable"].append(col)
-
     return {"stats1": stats1, "stats2": stats2, "comparison": comparison}
-    # ============================================================
+
+
+# ============================================================
 # AI PROMPT BUILDER
 # ============================================================
 
-def build_analysis_prompt(
-    stats, role_profile, industry,
-    is_comparison=False, comparison_data=None
-):
-    # Build exact column manifest — critical fix
+def build_analysis_prompt(stats, role_profile, industry, is_comparison=False, comparison_data=None):
     numeric_cols_available = list(stats.get("numeric_stats", {}).keys())
-    categorical_cols_available = list(
-        stats.get("categorical_stats", {}).keys()
-    )
+    categorical_cols_available = list(stats.get("categorical_stats", {}).keys())
     time_series_cols_available = list(stats.get("time_series", {}).keys())
-    target_vs_actual_available = list(
-        stats.get("target_vs_actual", {}).keys()
-    )
+    target_vs_actual_available = list(stats.get("target_vs_actual", {}).keys())
 
     columns_manifest = f"""
 EXACT AVAILABLE COLUMNS — USE ONLY THESE IN CHART FIELDS:
@@ -1172,21 +1005,10 @@ Generate comparative insights.
 Root cause hypothesis required for any decline above 10%.
 """
 
-    exclusion_text = (
-        f"\nEXPLICIT EXCLUSIONS — never reference: "
-        f"{', '.join(role_profile['exclusions'])}"
-        if role_profile["exclusions"] else ""
-    )
-    inclusion_text = (
-        f"\nPRIORITY FOCUS: {', '.join(role_profile['inclusions'])}"
-    )
-    kpi_text = (
-        f"\nKPI CARDS FOCUS ON: {', '.join(role_profile['kpi_focus'])}"
-    )
-    chart_text = (
-        f"\nCHART BUSINESS QUESTIONS (use available columns above): "
-        f"{', '.join(role_profile['chart_focus'])}"
-    )
+    exclusion_text = (f"\nEXPLICIT EXCLUSIONS — never reference: {', '.join(role_profile['exclusions'])}" if role_profile["exclusions"] else "")
+    inclusion_text = f"\nPRIORITY FOCUS: {', '.join(role_profile['inclusions'])}"
+    kpi_text = f"\nKPI CARDS FOCUS ON: {', '.join(role_profile['kpi_focus'])}"
+    chart_text = f"\nCHART BUSINESS QUESTIONS (use available columns above): {', '.join(role_profile['chart_focus'])}"
 
     prompt = f"""You are an enterprise-grade business intelligence analyst.
 You receive pre-computed statistics from a full dataset.
@@ -1325,9 +1147,7 @@ def call_openai(prompt, api_key, progress_placeholder):
         "📝 Finalising recommendations and narrative...",
     ]
     for i, step in enumerate(steps):
-        progress_placeholder.info(
-            f"**Step {i+1} of {len(steps)}:** {step}"
-        )
+        progress_placeholder.info(f"**Step {i+1} of {len(steps)}:** {step}")
         time.sleep(0.35)
 
     client = openai.OpenAI(api_key=api_key)
@@ -1342,8 +1162,7 @@ def call_openai(prompt, api_key, progress_placeholder):
                     "You are an enterprise BI analyst. "
                     "Return only valid JSON matching the exact schema. "
                     "No markdown. No explanation. "
-                    "x_field and y_field must be exact column names "
-                    "from the manifest provided. "
+                    "x_field and y_field must be exact column names from the manifest provided. "
                     "Every insight must answer the governing question."
                 )
             },
@@ -1357,11 +1176,7 @@ def call_openai(prompt, api_key, progress_placeholder):
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:
-        raise ValueError(
-            f"AI response could not be parsed. "
-            f"Details: {str(e)} | "
-            f"Preview: {raw[:300]}"
-        )
+        raise ValueError(f"AI response could not be parsed. Details: {str(e)} | Preview: {raw[:300]}")
 
 
 # ============================================================
@@ -1393,7 +1208,7 @@ def format_kpi_value(value_str):
 
 
 # ============================================================
-# CHART RENDERER — SMART MATCHING WITH 5 STRATEGIES
+# CHART RENDERER
 # ============================================================
 
 def render_chart(chart_spec, stats, df):
@@ -1403,15 +1218,10 @@ def render_chart(chart_spec, stats, df):
     x_field = chart_spec.get("x_field", "")
     y_field = chart_spec.get("y_field", "")
 
-    COLORS = [
-        "#3b82f6", "#10b981", "#f59e0b", "#ef4444",
-        "#6366f1", "#8b5cf6", "#06b6d4", "#ec4899"
-    ]
-
+    COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#6366f1", "#8b5cf6", "#06b6d4", "#ec4899"]
     fig = None
 
     try:
-        # STRATEGY 1 — TIME SERIES
         if data_source == "time_series":
             ts_data = stats.get("time_series", {})
             matched_col = None
@@ -1419,101 +1229,59 @@ def render_chart(chart_spec, stats, df):
                 matched_col = y_field
             else:
                 for col in ts_data:
-                    if (
-                        col.lower() in y_field.lower() or
-                        y_field.lower() in col.lower()
-                    ):
+                    if col.lower() in y_field.lower() or y_field.lower() in col.lower():
                         matched_col = col
                         break
                 if not matched_col and ts_data:
                     matched_col = list(ts_data.keys())[0]
-
             if matched_col:
                 labels = list(ts_data[matched_col].keys())
                 values = list(ts_data[matched_col].values())
-                fig = px.line(
-                    x=labels, y=values, title=title,
-                    labels={"x": "Period", "y": matched_col},
-                    color_discrete_sequence=COLORS
-                )
-                fig.update_traces(
-                    line=dict(width=2.5), mode='lines+markers'
-                )
+                fig = px.line(x=labels, y=values, title=title, labels={"x": "Period", "y": matched_col}, color_discrete_sequence=COLORS)
+                fig.update_traces(line=dict(width=2.5), mode='lines+markers')
 
-        # STRATEGY 2 — CATEGORICAL BREAKDOWN
         elif data_source == "categorical_stats":
             cat_stats = stats.get("categorical_stats", {})
             numeric_cols = list(stats.get("numeric_stats", {}).keys())
-
             matched_cat = None
             if x_field in cat_stats:
                 matched_cat = x_field
             else:
                 for col in cat_stats:
-                    if (
-                        col.lower() in x_field.lower() or
-                        x_field.lower() in col.lower()
-                    ):
+                    if col.lower() in x_field.lower() or x_field.lower() in col.lower():
                         matched_cat = col
                         break
                 if not matched_cat and cat_stats:
                     matched_cat = list(cat_stats.keys())[0]
-
             matched_num = None
             if y_field in numeric_cols:
                 matched_num = y_field
             else:
                 for col in numeric_cols:
-                    if (
-                        col.lower() in y_field.lower() or
-                        y_field.lower() in col.lower()
-                    ):
+                    if col.lower() in y_field.lower() or y_field.lower() in col.lower():
                         matched_num = col
                         break
                 if not matched_num and numeric_cols:
                     matched_num = numeric_cols[0]
-
             if matched_cat and matched_num:
                 breakdown = cat_stats[matched_cat].get("breakdown", {})
                 if matched_num in breakdown:
                     segments = list(breakdown[matched_num].keys())
-                    values = [
-                        breakdown[matched_num][s]["sum"]
-                        for s in segments
-                    ]
+                    values = [breakdown[matched_num][s]["sum"] for s in segments]
                 else:
-                    top_vals = cat_stats[matched_cat].get(
-                        "top_values", {}
-                    )
+                    top_vals = cat_stats[matched_cat].get("top_values", {})
                     segments = list(top_vals.keys())[:10]
                     values = list(top_vals.values())[:10]
                     matched_num = "Count"
-
-                df_plot = pd.DataFrame(
-                    {matched_cat: segments, matched_num: values}
-                ).sort_values(matched_num, ascending=False)
-
+                df_plot = pd.DataFrame({matched_cat: segments, matched_num: values}).sort_values(matched_num, ascending=False)
                 if chart_type == "pie":
-                    fig = px.pie(
-                        df_plot, names=matched_cat, values=matched_num,
-                        title=title, color_discrete_sequence=COLORS
-                    )
+                    fig = px.pie(df_plot, names=matched_cat, values=matched_num, title=title, color_discrete_sequence=COLORS)
                 elif chart_type == "ranked_list":
-                    df_plot = df_plot.sort_values(
-                        matched_num, ascending=True
-                    ).tail(10)
-                    fig = px.bar(
-                        df_plot, x=matched_num, y=matched_cat,
-                        orientation='h', title=title,
-                        color_discrete_sequence=COLORS
-                    )
+                    df_plot = df_plot.sort_values(matched_num, ascending=True).tail(10)
+                    fig = px.bar(df_plot, x=matched_num, y=matched_cat, orientation='h', title=title, color_discrete_sequence=COLORS)
                 else:
-                    fig = px.bar(
-                        df_plot, x=matched_cat, y=matched_num,
-                        title=title, color_discrete_sequence=COLORS
-                    )
+                    fig = px.bar(df_plot, x=matched_cat, y=matched_num, title=title, color_discrete_sequence=COLORS)
 
-        # STRATEGY 3 — TARGET VS ACTUAL WATERFALL
         elif data_source == "target_vs_actual":
             tva = stats.get("target_vs_actual", {})
             if tva:
@@ -1523,11 +1291,7 @@ def render_chart(chart_spec, stats, df):
                     orientation="v",
                     measure=["absolute", "relative", "total"],
                     x=["Target", "Variance", "Actual"],
-                    y=[
-                        item["target_total"],
-                        item["variance_abs"],
-                        item["actual_total"]
-                    ],
+                    y=[item["target_total"], item["variance_abs"], item["actual_total"]],
                     connector={"line": {"color": "#1e2330"}},
                     increasing={"marker": {"color": "#10b981"}},
                     decreasing={"marker": {"color": "#ef4444"}},
@@ -1535,90 +1299,51 @@ def render_chart(chart_spec, stats, df):
                 ))
                 fig.update_layout(title=title)
 
-        # STRATEGY 4 — NUMERIC STATS
         elif data_source == "numeric_stats":
             numeric_stats = stats.get("numeric_stats", {})
             numeric_cols = list(numeric_stats.keys())
             if chart_type == "scatter" and len(numeric_cols) >= 2:
-                col_x = (
-                    x_field if x_field in df.columns
-                    else numeric_cols[0]
-                )
-                col_y = (
-                    y_field if y_field in df.columns
-                    else numeric_cols[1] if len(numeric_cols) > 1
-                    else None
-                )
+                col_x = (x_field if x_field in df.columns else numeric_cols[0])
+                col_y = (y_field if y_field in df.columns else numeric_cols[1] if len(numeric_cols) > 1 else None)
                 if col_x and col_y:
                     try:
-                        fig = px.scatter(
-                            df, x=col_x, y=col_y, title=title,
-                            color_discrete_sequence=COLORS,
-                            trendline="ols"
-                        )
+                        fig = px.scatter(df, x=col_x, y=col_y, title=title, color_discrete_sequence=COLORS, trendline="ols")
                     except Exception:
-                        fig = px.scatter(
-                            df, x=col_x, y=col_y, title=title,
-                            color_discrete_sequence=COLORS
-                        )
+                        fig = px.scatter(df, x=col_x, y=col_y, title=title, color_discrete_sequence=COLORS)
             else:
                 labels = list(numeric_stats.keys())
                 values = [numeric_stats[c]["total"] for c in labels]
                 if labels:
-                    fig = px.bar(
-                        x=labels, y=values, title=title,
-                        labels={"x": "Metric", "y": "Total"},
-                        color_discrete_sequence=COLORS
-                    )
+                    fig = px.bar(x=labels, y=values, title=title, labels={"x": "Metric", "y": "Total"}, color_discrete_sequence=COLORS)
 
-        # STRATEGY 5 — UNIVERSAL FALLBACK
         if fig is None:
             ts_data = stats.get("time_series", {})
             cat_stats = stats.get("categorical_stats", {})
             numeric_stats = stats.get("numeric_stats", {})
-
             if ts_data:
                 first_col = list(ts_data.keys())[0]
                 labels = list(ts_data[first_col].keys())
                 values = list(ts_data[first_col].values())
-                fig = px.line(
-                    x=labels, y=values, title=title,
-                    labels={"x": "Period", "y": first_col},
-                    color_discrete_sequence=COLORS
-                )
-                fig.update_traces(
-                    line=dict(width=2.5), mode='lines+markers'
-                )
+                fig = px.line(x=labels, y=values, title=title, labels={"x": "Period", "y": first_col}, color_discrete_sequence=COLORS)
+                fig.update_traces(line=dict(width=2.5), mode='lines+markers')
             elif cat_stats and numeric_stats:
                 first_cat = list(cat_stats.keys())[0]
                 first_num = list(numeric_stats.keys())[0]
                 breakdown = cat_stats[first_cat].get("breakdown", {})
                 if first_num in breakdown:
                     segments = list(breakdown[first_num].keys())
-                    values = [
-                        breakdown[first_num][s]["sum"]
-                        for s in segments
-                    ]
+                    values = [breakdown[first_num][s]["sum"] for s in segments]
                 else:
                     top_vals = cat_stats[first_cat].get("top_values", {})
                     segments = list(top_vals.keys())[:10]
                     values = list(top_vals.values())[:10]
                     first_num = "Count"
-                df_plot = pd.DataFrame(
-                    {first_cat: segments, first_num: values}
-                ).sort_values(first_num, ascending=False)
-                fig = px.bar(
-                    df_plot, x=first_cat, y=first_num,
-                    title=title, color_discrete_sequence=COLORS
-                )
+                df_plot = pd.DataFrame({first_cat: segments, first_num: values}).sort_values(first_num, ascending=False)
+                fig = px.bar(df_plot, x=first_cat, y=first_num, title=title, color_discrete_sequence=COLORS)
             elif numeric_stats:
                 labels = list(numeric_stats.keys())
                 values = [numeric_stats[c]["total"] for c in labels]
-                fig = px.bar(
-                    x=labels, y=values, title=title,
-                    labels={"x": "Metric", "y": "Total"},
-                    color_discrete_sequence=COLORS
-                )
+                fig = px.bar(x=labels, y=values, title=title, labels={"x": "Metric", "y": "Total"}, color_discrete_sequence=COLORS)
 
         if fig:
             fig.update_layout(
@@ -1628,10 +1353,7 @@ def render_chart(chart_spec, stats, df):
                 title=dict(font=dict(size=14)),
                 margin=dict(l=20, r=20, t=50, b=20),
                 showlegend=True,
-                legend=dict(
-                    orientation="h", yanchor="bottom",
-                    y=1.02, xanchor="right", x=1
-                )
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
             fig.update_xaxes(showgrid=True, gridcolor="#f1f5f9")
             fig.update_yaxes(showgrid=True, gridcolor="#f1f5f9")
@@ -1651,15 +1373,9 @@ def render_executive_summary(result):
     role = result.get("role_interpreted", "")
     level = result.get("level", "")
     function = result.get("function", "")
-    st.info(
-        f"**Role:** {role} &nbsp;|&nbsp; "
-        f"**Level:** {level} &nbsp;|&nbsp; "
-        f"**Function:** {function}"
-    )
+    st.info(f"**Role:** {role} &nbsp;|&nbsp; **Level:** {level} &nbsp;|&nbsp; **Function:** {function}")
     summary = result.get("executive_summary", {})
-    for i, key in enumerate(
-        ["sentence_1", "sentence_2", "sentence_3"], 1
-    ):
+    for i, key in enumerate(["sentence_1", "sentence_2", "sentence_3"], 1):
         sentence = summary.get(key, "")
         if sentence:
             st.markdown(f"**{i}.** {sentence}")
@@ -1701,13 +1417,8 @@ def render_traffic_lights(traffic_lights):
             st.metric(
                 label=f"{icon} {tl.get('metric', '')}",
                 value=tl.get("actual_value", ""),
-                delta=(
-                    f"vs target: {tl.get('target_value', '')} "
-                    f"({tl.get('variance_pct', '')}%)"
-                ),
-                delta_color=(
-                    "normal" if status == "GREEN" else "inverse"
-                ),
+                delta=(f"vs target: {tl.get('target_value', '')} ({tl.get('variance_pct', '')}%)"),
+                delta_color=("normal" if status == "GREEN" else "inverse"),
                 help=tl.get("reason", "")
             )
 
@@ -1721,84 +1432,53 @@ def render_anomalies(anomalies):
     for anomaly in anomalies:
         severity = anomaly.get("severity", "LOW")
         icon = severity_icons.get(severity, "🔵")
-        with st.expander(
-            f"{icon} {severity} — {anomaly.get('metric', '')}",
-            expanded=(severity == "HIGH")
-        ):
-            st.markdown(
-                f"**Finding:** {anomaly.get('description', '')}"
-            )
+        with st.expander(f"{icon} {severity} — {anomaly.get('metric', '')}", expanded=(severity == "HIGH")):
+            st.markdown(f"**Finding:** {anomaly.get('description', '')}")
             col1, col2 = st.columns(2)
             with col1:
-                st.markdown(
-                    f"**Observed:** {anomaly.get('value', '')}"
-                )
+                st.markdown(f"**Observed:** {anomaly.get('value', '')}")
             with col2:
-                st.markdown(
-                    f"**Expected:** {anomaly.get('expected', '')}"
-                )
+                st.markdown(f"**Expected:** {anomaly.get('expected', '')}")
 
 
 def render_charts(charts, stats, df):
     if not charts:
         return
     st.markdown("### 📈 AI-Generated Charts")
-    st.caption(
-        "Selected dynamically based on your role and governing question"
-    )
-    sentiment_icons = {
-        "POSITIVE": "📈", "NEGATIVE": "📉",
-        "NEUTRAL": "➡️", "URGENT": "⚡"
-    }
-    confidence_icons = {
-        "HIGH": "🔵", "MEDIUM": "🟡", "INDICATIVE": "⚪"
-    }
+    st.caption("Selected dynamically based on your role and governing question")
+    sentiment_icons = {"POSITIVE": "📈", "NEGATIVE": "📉", "NEUTRAL": "➡️", "URGENT": "⚡"}
+    confidence_icons = {"HIGH": "🔵", "MEDIUM": "🟡", "INDICATIVE": "⚪"}
     i = 0
     while i < len(charts):
         if i + 1 < len(charts):
             col1, col2 = st.columns(2)
-            for col, chart_spec in zip(
-                [col1, col2], [charts[i], charts[i + 1]]
-            ):
+            for col, chart_spec in zip([col1, col2], [charts[i], charts[i + 1]]):
                 with col:
-                    _render_single_chart(
-                        chart_spec, stats, df,
-                        sentiment_icons, confidence_icons
-                    )
+                    _render_single_chart(chart_spec, stats, df, sentiment_icons, confidence_icons)
             i += 2
         else:
-            _render_single_chart(
-                charts[i], stats, df,
-                sentiment_icons, confidence_icons
-            )
+            _render_single_chart(charts[i], stats, df, sentiment_icons, confidence_icons)
             i += 1
 
 
-def _render_single_chart(
-    chart_spec, stats, df, sentiment_icons, confidence_icons
-):
+def _render_single_chart(chart_spec, stats, df, sentiment_icons, confidence_icons):
     title = chart_spec.get("title", "Chart")
     caption = chart_spec.get("caption", "")
     sentiment = chart_spec.get("sentiment", "NEUTRAL")
     confidence = chart_spec.get("confidence", "MEDIUM")
     verified = chart_spec.get("verified", False)
-
     sent_icon = sentiment_icons.get(sentiment, "➡️")
     conf_icon = confidence_icons.get(confidence, "⚪")
-
     st.markdown(f"**{title}**")
     st.caption(
-        f"{sent_icon} {sentiment} &nbsp;|&nbsp; "
-        f"{conf_icon} {confidence} Confidence"
+        f"{sent_icon} {sentiment} &nbsp;|&nbsp; {conf_icon} {confidence} Confidence"
         + (" &nbsp;|&nbsp; 🔵 ✓ Verified" if verified else "")
     )
-
     fig = render_chart(chart_spec, stats, df)
     if fig:
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.caption(f"💡 {caption}" if caption else "")
-
     if caption and fig:
         st.info(f"💡 {caption}")
     st.markdown("---")
@@ -1808,30 +1488,15 @@ def render_recommendations(recommendations):
     if not recommendations:
         return
     st.markdown("### 💡 Recommendations")
-    priority_icons = {
-        1: "🔴", 2: "🟡", 3: "🟢", 4: "🔵", 5: "⚪"
-    }
-    timeframe_labels = {
-        "IMMEDIATE": "⚡ Immediate",
-        "SHORT_TERM": "📅 Short Term",
-        "STRATEGIC": "🗺️ Strategic"
-    }
-    for rec in sorted(
-        recommendations, key=lambda x: x.get("priority", 5)
-    ):
+    priority_icons = {1: "🔴", 2: "🟡", 3: "🟢", 4: "🔵", 5: "⚪"}
+    timeframe_labels = {"IMMEDIATE": "⚡ Immediate", "SHORT_TERM": "📅 Short Term", "STRATEGIC": "🗺️ Strategic"}
+    for rec in sorted(recommendations, key=lambda x: x.get("priority", 5)):
         priority = rec.get("priority", 3)
         icon = priority_icons.get(priority, "⚪")
-        timeframe = timeframe_labels.get(
-            rec.get("timeframe", ""), rec.get("timeframe", "")
-        )
-        with st.expander(
-            f"{icon} Priority {priority} — {rec.get('action', '')}",
-            expanded=(priority == 1)
-        ):
+        timeframe = timeframe_labels.get(rec.get("timeframe", ""), rec.get("timeframe", ""))
+        with st.expander(f"{icon} Priority {priority} — {rec.get('action', '')}", expanded=(priority == 1)):
             st.markdown(f"**Rationale:** {rec.get('rationale', '')}")
-            st.markdown(
-                f"**Data Evidence:** {rec.get('data_evidence', '')}"
-            )
+            st.markdown(f"**Data Evidence:** {rec.get('data_evidence', '')}")
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown(f"**Owner:** {rec.get('owner', '')}")
@@ -1843,21 +1508,10 @@ def render_comparison_insights(comparison_insights):
     if not comparison_insights:
         return
     st.markdown("### 🔄 Comparison Analysis")
-    direction_icons = {
-        "improved": "📈", "declined": "📉", "stable": "➡️"
-    }
-    improved = [
-        c for c in comparison_insights
-        if c.get("direction") == "improved"
-    ]
-    declined = [
-        c for c in comparison_insights
-        if c.get("direction") == "declined"
-    ]
-    stable = [
-        c for c in comparison_insights
-        if c.get("direction") == "stable"
-    ]
+    direction_icons = {"improved": "📈", "declined": "📉", "stable": "➡️"}
+    improved = [c for c in comparison_insights if c.get("direction") == "improved"]
+    declined = [c for c in comparison_insights if c.get("direction") == "declined"]
+    stable = [c for c in comparison_insights if c.get("direction") == "stable"]
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Improved", len(improved))
@@ -1869,19 +1523,9 @@ def render_comparison_insights(comparison_insights):
     for insight in comparison_insights:
         direction = insight.get("direction", "stable")
         icon = direction_icons.get(direction, "➡️")
-        with st.expander(
-            f"{icon} {insight.get('metric', '')} — "
-            f"{insight.get('change_pct', '')}% change",
-            expanded=(direction == "declined")
-        ):
-            st.markdown(
-                f"**Implication:** "
-                f"{insight.get('business_implication', '')}"
-            )
-            st.markdown(
-                f"**Root Cause:** "
-                f"{insight.get('root_cause_hypothesis', '')}"
-            )
+        with st.expander(f"{icon} {insight.get('metric', '')} — {insight.get('change_pct', '')}% change", expanded=(direction == "declined")):
+            st.markdown(f"**Implication:** {insight.get('business_implication', '')}")
+            st.markdown(f"**Root Cause:** {insight.get('root_cause_hypothesis', '')}")
 
 
 def render_narrative(narrative):
@@ -1919,23 +1563,15 @@ def render_evaluation(evaluation):
     with col1:
         st.metric("Relevance", f"{score}/10")
     with col2:
-        acc_icon = (
-            "✅" if acc == "YES" else "⚠️" if acc == "PARTIAL" else "❌"
-        )
+        acc_icon = ("✅" if acc == "YES" else "⚠️" if acc == "PARTIAL" else "❌")
         st.metric("Accuracy", f"{acc_icon} {acc}")
     with col3:
         st.metric("Coverage", evaluation.get("coverage", "—"))
     with col4:
-        conf_icon = {
-            "HIGH": "🔵", "MEDIUM": "🟡", "INDICATIVE": "⚪"
-        }.get(conf, "")
+        conf_icon = {"HIGH": "🔵", "MEDIUM": "🟡", "INDICATIVE": "⚪"}.get(conf, "")
         st.metric("Confidence", f"{conf_icon} {conf}")
     with col5:
-        bias_icon = (
-            "✅" if bias == "BALANCED"
-            else "⚠️" if bias == "IMBALANCED"
-            else "➡️"
-        )
+        bias_icon = ("✅" if bias == "BALANCED" else "⚠️" if bias == "IMBALANCED" else "➡️")
         st.metric("Bias", f"{bias_icon} {bias}")
     with col6:
         status_icon = "✅" if status == "COMPLETE" else "⚠️"
@@ -1948,9 +1584,7 @@ def render_precomputed_stats(stats):
     if not stats:
         return
     st.markdown("**Pre-Computed Statistics — Full Dataset**")
-    st.caption(
-        "Every number the AI references validated against these values"
-    )
+    st.caption("Every number the AI references validated against these values")
     if stats.get("numeric_stats"):
         rows = []
         for col, s in stats["numeric_stats"].items():
@@ -1963,27 +1597,331 @@ def render_precomputed_stats(stats):
                 "Outliers": s['outlier_count']
             })
         if rows:
-            st.dataframe(
-                pd.DataFrame(rows),
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     if stats.get("period_info"):
         p = stats["period_info"]
-        st.info(
-            f"📅 Date range: **{p['from']}** to **{p['to']}** "
-            f"({p['days']} days)"
-        )
+        st.info(f"📅 Date range: **{p['from']}** to **{p['to']}** ({p['days']} days)")
     if stats.get("correlations"):
         st.markdown("**Strong Correlations:**")
         for corr in stats["correlations"]:
-            direction = (
-                "positive" if corr["correlation"] > 0 else "negative"
-            )
-            st.markdown(
-                f"- **{corr['col1']}** ↔ **{corr['col2']}**: "
-                f"{corr['correlation']} ({direction})"
-            )
+            direction = ("positive" if corr["correlation"] > 0 else "negative")
+            st.markdown(f"- **{corr['col1']}** ↔ **{corr['col2']}**: {corr['correlation']} ({direction})")
+
+
+# ============================================================
+# CHAT FUNCTIONS — NATURAL LANGUAGE QUERY (FEATURE 12)
+# ============================================================
+
+def build_stats_summary_for_chat(stats):
+    """
+    Builds a compact text summary of pre-computed stats.
+    This is what gets sent to the AI for chat — not the raw data.
+    Keeps token cost low.
+    """
+    lines = []
+    lines.append(f"Dataset: {stats.get('dataset_name', 'Unknown')}")
+    lines.append(f"Total rows: {stats.get('total_rows', 0)}")
+
+    if stats.get("numeric_stats"):
+        lines.append("\nNumeric column totals and averages:")
+        for col, s in stats["numeric_stats"].items():
+            lines.append(f"  {col}: total={s['total']}, mean={s['mean']}, min={s['min']}, max={s['max']}")
+
+    if stats.get("categorical_stats"):
+        lines.append("\nCategorical breakdowns (top values by count):")
+        for col, s in stats["categorical_stats"].items():
+            top = list(s.get("top_values", {}).items())[:5]
+            top_str = ", ".join([f"{k}={v}" for k, v in top])
+            lines.append(f"  {col}: {top_str}")
+            # Include numeric breakdowns if available
+            if s.get("breakdown"):
+                for num_col, breakdown in list(s["breakdown"].items())[:2]:
+                    sums = {k: v["sum"] for k, v in list(breakdown.items())[:5]}
+                    sums_str = ", ".join([f"{k}={v}" for k, v in sums.items()])
+                    lines.append(f"    {col} by {num_col} (sum): {sums_str}")
+
+    if stats.get("time_series"):
+        lines.append("\nTime series (monthly totals):")
+        for col, ts in stats["time_series"].items():
+            periods = list(ts.items())
+            lines.append(f"  {col}: {len(periods)} periods from {periods[0][0]} to {periods[-1][0]}")
+            # Show last 3 periods
+            for period, val in periods[-3:]:
+                lines.append(f"    {period}: {val}")
+
+    if stats.get("target_vs_actual"):
+        lines.append("\nTarget vs Actual:")
+        for key, item in stats["target_vs_actual"].items():
+            lines.append(f"  {item['actual_col']} vs {item['target_col']}: actual={item['actual_total']}, target={item['target_total']}, variance={item['variance_pct']}% ({item['status']})")
+
+    if stats.get("anomalies"):
+        lines.append("\nAnomalies detected:")
+        for a in stats["anomalies"]:
+            lines.append(f"  {a['column']}: {a['outlier_count']} outliers (mean={a['mean']}, std={a['std']})")
+
+    if stats.get("period_info"):
+        p = stats["period_info"]
+        lines.append(f"\nDate range: {p['from']} to {p['to']} ({p['days']} days)")
+
+    return "\n".join(lines)
+
+
+def generate_suggested_questions(role, industry, stats, api_key):
+    """
+    One small API call to generate 4-5 role-specific questions.
+    Uses the stats summary — not raw data.
+    Returns a list of question strings.
+    """
+    stats_summary = build_stats_summary_for_chat(stats)
+
+    prompt = f"""You are a business intelligence assistant.
+Generate exactly 4 short, specific questions that a {role} in {industry} would want to ask about their data.
+Base questions on actual patterns in the statistics provided.
+Questions must be answerable from the statistics provided.
+Return ONLY a JSON array of 4 strings. No markdown. No explanation.
+
+Role: {role}
+Industry: {industry}
+
+Statistics summary:
+{stats_summary}
+
+Return format:
+["Question 1?", "Question 2?", "Question 3?", "Question 4?"]"""
+
+    try:
+        client = openai.OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_tokens=500,
+            temperature=0.2,
+            messages=[
+                {"role": "system", "content": "Return only a valid JSON array of 4 question strings. No markdown. No explanation."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        raw = response.choices[0].message.content.strip()
+        raw = raw.replace("```json", "").replace("```", "").strip()
+        questions = json.loads(raw)
+        if isinstance(questions, list):
+            return [str(q) for q in questions[:5]]
+        return []
+    except Exception:
+        return [
+            "Which metric had the highest value overall?",
+            "What was the trend over time?",
+            "Which category performed best?",
+            "Were there any unusual patterns in the data?"
+        ]
+
+
+def answer_chat_question(question, role, industry, stats, api_key):
+    """
+    One small API call to answer a single user question.
+    Uses stats summary only — never re-sends raw data.
+    Returns a dict with answer text, optional chart spec, and follow-up.
+    """
+    stats_summary = build_stats_summary_for_chat(stats)
+
+    # Build list of available column names for chart spec validation
+    numeric_cols = list(stats.get("numeric_stats", {}).keys())
+    categorical_cols = list(stats.get("categorical_stats", {}).keys())
+    time_series_cols = list(stats.get("time_series", {}).keys())
+
+    prompt = f"""You are a business intelligence assistant answering a question for a {role} in {industry}.
+Answer using ONLY the statistics provided. Do not invent data.
+If the data cannot answer the question, say so clearly and suggest a related question you CAN answer.
+
+Role: {role}
+Industry: {industry}
+
+Available column names:
+- Numeric: {json.dumps(numeric_cols)}
+- Categorical: {json.dumps(categorical_cols)}
+- Time series: {json.dumps(time_series_cols)}
+
+Statistics summary:
+{stats_summary}
+
+User question: {question}
+
+Return ONLY valid JSON. No markdown. No explanation.
+
+Schema:
+{{
+  "answer": "string — plain English answer written for a {role}. Use actual numbers from statistics.",
+  "data_available": true,
+  "suggested_followup": "string — one follow-up question the data CAN answer, or null",
+  "chart_needed": false,
+  "chart": null
+}}
+
+If a chart genuinely helps (e.g. comparison across categories, trend over time):
+Set chart_needed to true and provide:
+{{
+  "answer": "string",
+  "data_available": true,
+  "suggested_followup": "string or null",
+  "chart_needed": true,
+  "chart": {{
+    "type": "bar|line|pie|ranked_list",
+    "title": "string",
+    "data_source": "categorical_stats|time_series|numeric_stats",
+    "x_field": "exact column name from available columns above",
+    "y_field": "exact column name from available columns above",
+    "caption": "string — one sentence insight"
+  }}
+}}
+
+Rules:
+- x_field and y_field must be exact names from the available columns lists above
+- chart_needed must be false for single-number answers
+- chart_needed must be false if no suitable columns exist for the chart
+- answer must use actual numbers from the statistics
+- If data_available is false, explain what is missing"""
+
+    try:
+        client = openai.OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_tokens=1000,
+            temperature=0.15,
+            messages=[
+                {"role": "system", "content": "Return only valid JSON matching the exact schema. No markdown. No explanation."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        raw = response.choices[0].message.content.strip()
+        raw = raw.replace("```json", "").replace("```", "").strip()
+        return json.loads(raw)
+    except Exception as e:
+        return {
+            "answer": f"I could not process that question. Please try rephrasing it. (Error: {str(e)[:100]})",
+            "data_available": False,
+            "suggested_followup": None,
+            "chart_needed": False,
+            "chart": None
+        }
+
+
+def render_chat_panel(stats, role, industry):
+    """
+    Renders the full chat interface at the bottom of the dashboard.
+    Uses only native Streamlit components.
+    """
+    st.markdown("### 💬 Ask a Question About Your Data")
+    st.caption("Ask anything about your dataset in plain English")
+    st.divider()
+
+    # --- SUGGESTED QUESTIONS SECTION ---
+    if not st.session_state.suggested_questions:
+        if st.button("💡 Show Suggested Questions", use_container_width=False):
+            with st.spinner("Generating questions for your role..."):
+                questions = generate_suggested_questions(
+                    role, industry, stats, st.session_state.api_key
+                )
+                st.session_state.suggested_questions = questions
+                st.rerun()
+    else:
+        st.markdown("**Suggested questions for your role:**")
+        # Render suggested questions as buttons in a row
+        cols = st.columns(len(st.session_state.suggested_questions))
+        for i, (col, question) in enumerate(zip(cols, st.session_state.suggested_questions)):
+            with col:
+                if st.button(
+                    question,
+                    key=f"suggested_q_{i}",
+                    use_container_width=True
+                ):
+                    # Add question to chat and get answer
+                    _process_chat_question(question, stats, role, industry)
+
+    st.markdown("---")
+
+    # --- CHAT HISTORY DISPLAY ---
+    if st.session_state.chat_history:
+        st.markdown("**Conversation:**")
+        for entry in st.session_state.chat_history:
+            # User question — shown in a styled info box
+            st.markdown(f"**You:** {entry['question']}")
+
+            # Assistant answer
+            answer_data = entry.get("answer_data", {})
+            answer_text = answer_data.get("answer", "")
+            data_available = answer_data.get("data_available", True)
+
+            if data_available:
+                st.success(f"**Assistant:** {answer_text}")
+            else:
+                st.warning(f"**Assistant:** {answer_text}")
+
+            # Optional chart
+            if answer_data.get("chart_needed") and answer_data.get("chart"):
+                chart_spec = answer_data["chart"]
+                fig = render_chart(chart_spec, stats, st.session_state.uploaded_df)
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
+                    if chart_spec.get("caption"):
+                        st.caption(f"💡 {chart_spec['caption']}")
+
+            # Follow-up suggestion
+            if answer_data.get("suggested_followup"):
+                st.caption(f"🔗 You could also ask: *{answer_data['suggested_followup']}*")
+
+            st.markdown("---")
+
+    # --- TEXT INPUT FOR NEW QUESTION ---
+    st.markdown("**Ask your own question:**")
+
+    # Use a form to handle submission cleanly
+    with st.form(key=f"chat_form_{st.session_state.chat_input_key}"):
+        user_question = st.text_input(
+            "Type your question here...",
+            placeholder="e.g. Which region had the highest sales? What was the trend over time?",
+            label_visibility="collapsed"
+        )
+        submit_question = st.form_submit_button(
+            "Submit →",
+            use_container_width=False
+        )
+
+    if submit_question and user_question.strip():
+        # Injection check on chat input
+        injection_keywords = [
+            "ignore", "reveal", "system prompt", "you are now",
+            "forget", "override", "jailbreak", "drop table", "select *", "<script"
+        ]
+        if any(kw in user_question.lower() for kw in injection_keywords):
+            st.error("⚠️ This input cannot be processed. Please ask a question about your data.")
+        else:
+            _process_chat_question(user_question.strip(), stats, role, industry)
+
+    st.caption(
+        f"Chat uses pre-computed statistics only. "
+        f"Raw data is never re-sent. "
+        f"{len(st.session_state.chat_history)} question(s) asked this session."
+    )
+
+
+def _process_chat_question(question, stats, role, industry):
+    """
+    Internal helper: calls the answer API, stores result in chat history, reruns.
+    """
+    with st.spinner("Answering your question..."):
+        answer_data = answer_chat_question(
+            question, role, industry, stats, st.session_state.api_key
+        )
+
+    # Store in chat history
+    st.session_state.chat_history.append({
+        "question": question,
+        "answer_data": answer_data,
+        "timestamp": datetime.now().strftime("%H:%M")
+    })
+
+    # Increment key to reset text input
+    st.session_state.chat_input_key += 1
+    st.rerun()
 
 
 # ============================================================
@@ -2017,53 +1955,37 @@ def screen_dashboard():
             st.session_state.show_narrative = False
             st.session_state.user_role = None
             st.session_state.confirmed_industry = None
+            st.session_state.chat_history = []
+            st.session_state.suggested_questions = []
+            st.session_state.chat_input_key = 0
             st.rerun()
 
     st.divider()
 
     if st.session_state.role_profile is None:
-        st.session_state.role_profile = build_role_profile(
-            role, industry, df
-        )
+        st.session_state.role_profile = build_role_profile(role, industry, df)
     role_profile = st.session_state.role_profile
 
     if st.session_state.dashboard_result is None:
         progress_placeholder = st.empty()
         try:
-            progress_placeholder.info(
-                "**Step 1 of 9:** 📂 Building role profile..."
-            )
+            progress_placeholder.info("**Step 1 of 9:** 📂 Building role profile...")
             relevant_cols = get_relevant_columns(df, role_profile)
 
-            progress_placeholder.info(
-                "**Step 2 of 9:** 📊 Pre-computing statistics..."
-            )
+            progress_placeholder.info("**Step 2 of 9:** 📊 Pre-computing statistics...")
             if is_comparison and comparison_df is not None:
-                comp_data = precompute_comparison(
-                    df, comparison_df, role_profile,
-                    filename, comparison_filename
-                )
+                comp_data = precompute_comparison(df, comparison_df, role_profile, filename, comparison_filename)
                 stats = comp_data["stats1"]
             else:
                 comp_data = None
-                stats = precompute_statistics(
-                    df, relevant_cols, role_profile, filename
-                )
+                stats = precompute_statistics(df, relevant_cols, role_profile, filename)
 
             st.session_state.precomputed_stats = stats
 
-            progress_placeholder.info(
-                "**Step 3 of 9:** 🧠 Building analysis prompt..."
-            )
-            prompt = build_analysis_prompt(
-                stats, role_profile, industry,
-                is_comparison=is_comparison,
-                comparison_data=comp_data
-            )
+            progress_placeholder.info("**Step 3 of 9:** 🧠 Building analysis prompt...")
+            prompt = build_analysis_prompt(stats, role_profile, industry, is_comparison=is_comparison, comparison_data=comp_data)
 
-            result = call_openai(
-                prompt, st.session_state.api_key, progress_placeholder
-            )
+            result = call_openai(prompt, st.session_state.api_key, progress_placeholder)
 
             st.session_state.dashboard_result = result
             st.session_state.analysis_error = None
@@ -2077,19 +1999,11 @@ def screen_dashboard():
 
     if st.session_state.analysis_error:
         st.error("### ⚠️ Analysis Error")
-        st.markdown(
-            f"**What went wrong:** {st.session_state.analysis_error}"
-        )
-        st.markdown(
-            "**Your pre-computed statistics are still available below.**"
-        )
+        st.markdown(f"**What went wrong:** {st.session_state.analysis_error}")
+        st.markdown("**Your pre-computed statistics are still available below.**")
         col1, col2 = st.columns(2)
         with col1:
-            if st.button(
-                "🔄 Retry Analysis",
-                type="primary",
-                use_container_width=True
-            ):
+            if st.button("🔄 Retry Analysis", type="primary", use_container_width=True):
                 st.session_state.dashboard_result = None
                 st.session_state.analysis_error = None
                 st.rerun()
@@ -2139,10 +2053,7 @@ def screen_dashboard():
         if st.button("📝 Generate Narrative Report", type="primary"):
             st.session_state.show_narrative = True
             st.rerun()
-        st.caption(
-            "Generates a professional business document "
-            "written in the voice appropriate for your role."
-        )
+        st.caption("Generates a professional business document written in the voice appropriate for your role.")
     else:
         if result.get("narrative"):
             render_narrative(result["narrative"])
@@ -2156,15 +2067,20 @@ def screen_dashboard():
         render_precomputed_stats(stats)
 
     st.divider()
+
+    # ---- CHAT PANEL — NATURAL LANGUAGE QUERY ----
+    render_chat_panel(stats, role, industry)
+
+    st.divider()
+
+    # ---- FEEDBACK ----
     st.markdown("### 💬 Was this analysis useful?")
     col1, col2 = st.columns(2)
     with col1:
         if st.button("👍 Yes — helpful", use_container_width=True):
             st.success("Thank you for your feedback!")
     with col2:
-        if st.button(
-            "👎 No — something was off", use_container_width=True
-        ):
+        if st.button("👎 No — something was off", use_container_width=True):
             feedback = st.text_area(
                 "What was missing or incorrect?",
                 placeholder="Tell us what the analysis missed..."
