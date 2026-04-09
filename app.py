@@ -305,7 +305,10 @@ with st.sidebar:
                     st.session_state.feedback_score = "negative"
                     st.rerun()
         else:
-            st.success("Thanks for the feedback!") if st.session_state.feedback_score == "positive" else st.warning("Thanks — we'll improve.")
+            if st.session_state.feedback_score == "positive":
+                st.success("Thanks for the feedback!")
+            else:
+                st.warning("Thanks — we'll improve.")
         st.divider()
 
         if st.button("↩ Start Over", use_container_width=True):
@@ -502,7 +505,10 @@ elif st.session_state.step == "quality":
     else:
         st.success("✅ No missing values detected.")
 
-    st.warning(f"⚠️ {duplicates} duplicate row(s) detected.") if duplicates>0 else st.success("✅ No duplicate rows detected.")
+    if duplicates > 0:
+        st.warning(f"⚠️ {duplicates} duplicate row(s) detected.")
+    else:
+        st.success("✅ No duplicate rows detected.")
 
     if pii_cols:
         st.error(f"🔴 PII Detected in: **{', '.join(pii_cols)}**")
