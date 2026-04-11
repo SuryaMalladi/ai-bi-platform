@@ -92,6 +92,30 @@ for k, v in defaults.items():
 def stable_hash(s):
     return hashlib.md5(str(s).encode()).hexdigest()[:12]
 
+def format_number(val, is_pct=False):
+    """
+    Format numbers for professional BI display.
+    Percentages: show as-is with % suffix.
+    Values: abbreviate to K/M for readability.
+    """
+    if val is None:
+        return "—"
+    try:
+        v = float(val)
+    except (TypeError, ValueError):
+        return str(val)
+    if is_pct:
+        return f"{v:.1f}%"
+    if abs(v) >= 1_000_000:
+        return f"{v/1_000_000:.1f}M"
+    if abs(v) >= 10_000:
+        return f"{v/1_000:.0f}K"
+    if abs(v) >= 1_000:
+        return f"{v/1_000:.1f}K"
+    if v == int(v):
+        return f"{int(v):,}"
+    return f"{v:,.1f}"
+
 # ═══════════════════════════════════════════════════════
 # RIF — COMPLETE ROLE INTELLIGENCE FRAMEWORK
 # Implements RIF v1.0 Section 2, 4, 5, 6 exactly
@@ -206,7 +230,11 @@ def detect_role_profile(role_input, df_columns=None):
     # ── R1: ABBREVIATION EXACT MATCH ──
     # Try each word in the role as a potential abbreviation
     role_words = re.findall(r'[a-zA-Z]+', role_for_level)
-    for word in role_words:
+    # Only match abbreviations that are standalone words (not parts of longer words)
+    # Split on spaces and punctuation to get true word tokens
+    true_words = re.split(r'[\s\-_/&,\.]+', role_for_level.strip())
+    true_words = [w.strip().lower() for w in true_words if w.strip()]
+    for word in true_words:
         if word in RIF_ABBREVIATIONS:
             entry   = RIF_ABBREVIATIONS[word]
             level   = entry["level"]
@@ -1045,7 +1073,7 @@ def run_completeness_check(analysis, facts):
     if pct >= 90:
         msg = f"✅ Analysis Coverage: {cov_str}."
     elif pct >= 60:
-        msg = f"ℹ️ Analysis Coverage: {cov_str}. Not addressed: {', '.join(uncovered[:5])}"
+        msg = f"ℹ️ Analysis Coverage: {cov_str}. Not addressed: {', '.join(c.replace('_',' ').title() for c in uncovered[:5])}"
     else:
         msg = f"⚠️ Coverage Notice: {cov_str}. Consider switching role for broader coverage."
     return pct, cov_str, msg
@@ -1208,12 +1236,16 @@ def check_date_format_issues(df):
 
 def check_type_inconsistencies(df):
     issues = []
+    date_indicators = ['date','time','period','month','year','week','day','quarter','timestamp']
     for col in df.select_dtypes(include=["object"]).columns:
+        # Skip date columns — they legitimately contain date strings
+        if any(k in col.lower() for k in date_indicators):
+            continue
         sample        = df[col].dropna().head(50)
         numeric_count = sum(1 for v in sample
                             if str(v).replace('.','').replace('-','').replace(',','').isdigit())
         if len(sample) > 0 and numeric_count / len(sample) > 0.5:
-            issues.append(f"{col}: appears to contain mixed numeric and text values")
+            issues.append(f"{col.replace('_',' ').title()}: appears to contain mixed numeric and text values")
     return issues
 
 def clean_ai_text(text):
@@ -1407,16 +1439,25 @@ def render_chart(ch, df, col_classifications):
             is_pct = ctype == "percentage"
             val    = round(float(df[kpi_col].mean()), 2) if is_pct                      else round(float(df[kpi_col].sum()), 2)
             suffix = "%" if is_pct else ""
-            fmt    = ",.1f" if is_pct else ",.0f"
-            label  = "average" if is_pct else "total"
+            label      = "average" if is_pct else "total"
+            fmt_val    = format_number(val, is_pct=is_pct)
             fig    = go.Figure(go.Indicator(
                 mode="number",
                 value=val,
                 title={"text": f"{title}<br><span style='font-size:11px;color:#64748b'>{label}</span>",
                        "font": {"color": "#e2e8f0", "size": 13}},
                 number={"font": {"color": primary_colour, "size": 40},
-                        "valueformat": fmt, "suffix": suffix}
+                        "valueformat": ",.1f" if is_pct else ",.0f",
+                        "suffix": suffix}
             ))
+            # Override Plotly number with formatted value via annotation
+            fig.add_annotation(
+                text=fmt_val, x=0.5, y=0.45, xref="paper", yref="paper",
+                showarrow=False,
+                font=dict(size=40, color=primary_colour, family="sans-serif"),
+                xanchor="center"
+            )
+            fig.update_traces(visible=False)
             fig.update_layout(**CHART_THEME)
             return fig, None
 
@@ -1455,7 +1496,9 @@ def render_chart(ch, df, col_classifications):
             fig = px.line(g, x=xc, y=y_label, title=title, markers=True,
                           color_discrete_sequence=[primary_colour],
                           labels={xc: x_label, y_label: y_label})
-            fig.update_layout(**CHART_THEME)
+            theme = dict(CHART_THEME)
+            theme["yaxis"] = dict(CHART_THEME["yaxis"], tickformat=",.0f" if not use_mean else ".1f")
+            fig.update_layout(**theme)
             return fig, None
 
         if chart_type == "pie":
@@ -1486,7 +1529,22 @@ def render_chart(ch, df, col_classifications):
         fig = px.bar(g, x=xc, y=y_label, title=title,
                      color_discrete_sequence=[primary_colour],
                      labels={xc: x_label, y_label: y_label})
-        fig.update_layout(**CHART_THEME)
+        theme = dict(CHART_THEME)
+        theme["yaxis"] = dict(CHART_THEME["yaxis"], tickformat=",.0f" if not use_mean else ".1f")
+        fig.update_layout(**theme)
+        # Colour each bar by value — top performers blue, bottom red
+        bar_vals = g[y_label].tolist()
+        if len(bar_vals) > 1:
+            mean_val = sum(bar_vals) / len(bar_vals)
+            bar_colours = []
+            for bv in bar_vals:
+                if bv >= mean_val * 1.05:
+                    bar_colours.append("#10b981")  # green — above average
+                elif bv <= mean_val * 0.85:
+                    bar_colours.append("#ef4444")  # red — below average
+                else:
+                    bar_colours.append(primary_colour)  # neutral
+            fig.update_traces(marker_color=bar_colours)
         return fig, None
 
     except Exception as e:
@@ -1921,7 +1979,7 @@ def compute_comparison_metrics(facts_a, facts_b):
 # SIDEBAR
 # ═══════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("### ⚡ SIMBA AI")
+    st.markdown("### 🦁 SIMBA AI")
     st.caption("AI Intelligence Platform")
     st.divider()
 
@@ -1989,6 +2047,7 @@ with st.sidebar:
         if st.button("↩ Start Over", use_container_width=True):
             for k in list(st.session_state.keys()):
                 del st.session_state[k]
+            # Re-initialise defaults so no stale comparison data remains
             st.rerun()
 
 # ═══════════════════════════════════════════════════════
@@ -1997,7 +2056,7 @@ with st.sidebar:
 if st.session_state.step == "landing":
     n1, n2 = st.columns([1, 5])
     with n1:
-        st.markdown("### ⚡ SIMBA AI")
+        st.markdown("### 🦁 SIMBA AI")
     with n2:
         st.caption("AI Business Intelligence Platform · v1.0")
     st.markdown("---")
@@ -2393,6 +2452,10 @@ elif st.session_state.step == "dashboard":
 
     role         = st.session_state.role
     role_profile = st.session_state.role_profile
+    # Safety: if role_profile is empty (e.g. session restored mid-flow), rebuild it
+    if not role_profile.get("level"):
+        role_profile = detect_role_profile(role, list(df.columns) if df is not None else [])
+        st.session_state.role_profile = role_profile
     is_comparison = st.session_state.comparison_mode
 
     # ── COMPUTE VERIFIED FACTS ──
@@ -2417,7 +2480,7 @@ elif st.session_state.step == "dashboard":
         label_b    = st.session_state.data_label2
 
         # Top bar
-        st.markdown("### ⚡ SIMBA AI — Comparison Mode")
+        st.markdown("### 🦁 SIMBA AI — Comparison Mode")
         st.caption(
             f"Role: **{role_profile.get('title', role)}** · "
             f"{role_profile.get('level','')} · {role_profile.get('function','')} · "
@@ -2565,7 +2628,7 @@ elif st.session_state.step == "dashboard":
     # ── TOP BAR ──
     tb1, tb2, tb3 = st.columns([4, 2, 1])
     with tb1:
-        st.markdown("### ⚡ SIMBA AI Dashboard")
+        st.markdown("### 🦁 SIMBA AI Dashboard")
         st.caption(
             f"Role: **{analysis.get('role_interpreted', role)}** · "
             f"{analysis.get('level','')} · {analysis.get('function','')} · "
@@ -2624,8 +2687,24 @@ elif st.session_state.step == "dashboard":
                 with tl_cols[i % cols_n]:
                     with st.container(border=True):
                         st.markdown(f"{icon} **{tl.get('metric','')}**")
-                        st.markdown(f"### {tl.get('value','')}")
-                        st.caption(tl.get("reason",""))
+                        raw_val = tl.get("value","")
+                        # Try to format as number if possible
+                        try:
+                            nums = re.findall(r"[\d]+\.?\d*", str(raw_val).replace(",",""))
+                            if nums:
+                                num_val = float(nums[0])
+                                # Detect if percentage from metric name or value
+                                is_pct_val = "%" in str(raw_val)
+                                fmt_val = format_number(num_val, is_pct=is_pct_val)
+                                # Preserve any suffix text after the number
+                                suffix_text = re.sub(r"[\d,\.]+", "", str(raw_val)).strip()
+                                display_val = fmt_val + (f" {suffix_text}" if suffix_text and suffix_text != "%" else "")
+                            else:
+                                display_val = raw_val
+                        except Exception:
+                            display_val = raw_val
+                        st.markdown(f"### {display_val}")
+                        st.caption(clean_ai_text(tl.get("reason","")))
                         if tl.get("target_note"):
                             st.caption(f"ℹ️ {tl['target_note']}")
 
@@ -2645,15 +2724,15 @@ elif st.session_state.step == "dashboard":
             low    = [a for a in all_anomalies if a.get("severity") == "LOW"]
             st.markdown("#### ⚠️ Anomaly Alerts")
             for a in high:
-                text = a.get("finding") or a.get("description","")
+                text = clean_ai_text(a.get("finding") or a.get("description",""))
                 with st.container(border=True):
                     st.markdown(f"🔴 **Requires Attention** — {text}")
             for a in medium:
-                text = a.get("finding") or a.get("description","")
+                text = clean_ai_text(a.get("finding") or a.get("description",""))
                 with st.container(border=True):
                     st.markdown(f"🟡 **Monitor Closely** — {text}")
             for a in low:
-                text = a.get("finding") or a.get("description","")
+                text = clean_ai_text(a.get("finding") or a.get("description",""))
                 with st.container(border=True):
                     st.markdown(f"🔵 **Note** — {text}")
 
@@ -2681,7 +2760,7 @@ elif st.session_state.step == "dashboard":
                                 rel_label = ch.get("_relevance_label","")
                                 if rel_label:
                                     st.caption(rel_label)
-                                st.caption(f"💡 {ch.get('caption','')}")
+                                st.caption(f"💡 {clean_ai_text(ch.get('caption',''))}")
                                 b1, b2, b3 = st.columns(3)
                                 with b1:
                                     sent = ch.get("sentiment","")
@@ -2742,9 +2821,9 @@ elif st.session_state.step == "dashboard":
                 p      = r.get("priority", 3)
                 p_icon = {1:"🔴",2:"🟡",3:"🟢"}.get(p,"🔵")
                 with st.container(border=True):
-                    st.markdown(f"{p_icon} **P{p} · {r.get('action','')}**")
+                    st.markdown(f"{p_icon} **P{p} · {clean_ai_text(r.get('action',''))}**")
                     if r.get("evidence"):
-                        st.caption(f"📊 Evidence: {r['evidence']}")
+                        st.caption(f"📊 Evidence: {clean_ai_text(r['evidence'])}")
                     if r.get("hypothesis"):
                         # Strip the AI's own label if it included it — avoid duplication
                         hyp = r['hypothesis']
@@ -2760,11 +2839,11 @@ elif st.session_state.step == "dashboard":
             st.markdown("#### 📝 Narrative Report")
             with st.container(border=True):
                 if narrative.get("opening"):
-                    st.markdown(narrative["opening"])
+                    st.markdown(clean_ai_text(narrative["opening"]))
                 for p in narrative.get("body", []):
-                    st.markdown(p)
+                    st.markdown(clean_ai_text(p))
                 if narrative.get("close"):
-                    st.markdown(narrative["close"])
+                    st.markdown(clean_ai_text(narrative["close"]))
 
         # ── EVALUATION METADATA ──
         ev = analysis.get("evaluation", {})
@@ -2795,12 +2874,7 @@ elif st.session_state.step == "dashboard":
         # ════════════════════════════════════════
         st.markdown("---")
         st.markdown("## 🛠️ Build Your Own Analysis")
-        st.markdown(
-            "<p style='color:#64748b;font-size:0.95rem;margin-top:-12px;margin-bottom:16px;'>"
-            "Select any columns, choose a chart type, and apply a filter. "
-            "No code required — mirrors Tableau and Power BI self-service capability.</p>",
-            unsafe_allow_html=True
-        )
+        st.caption("Select any columns, choose a chart type, and apply a filter. No code required — mirrors Tableau and Power BI self-service capability.")
 
         with st.container(border=True):
             # Row 1 — column selectors and chart type
@@ -2968,7 +3042,7 @@ elif st.session_state.step == "dashboard":
                             st.markdown(f"**You:** {msg['content']}")
                             st.markdown("---")
                         else:
-                            st.markdown(f"**SIMBA AI:** {msg['content']}")
+                            st.markdown(f"**SIMBA AI:** {clean_ai_text(msg['content'])}")
                             st.markdown("---")
 
                     last = st.session_state.chat_history[-1]
