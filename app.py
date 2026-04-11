@@ -397,12 +397,50 @@ def compute_group_aggregates(df, col_classifications):
                 pass
     return groups
 
+def is_binary_column(s):
+    """Check if a column is a binary flag (only 0 and 1 values)."""
+    unique_vals = set(s.dropna().unique())
+    return unique_vals.issubset({0, 1, 0.0, 1.0})
+
+def is_identifier_column(col_name, df):
+    """Check if a column is an identifier (ID, code, reference number)."""
+    col_lower = col_name.lower()
+    id_keywords = ["id", "_id", "code", "ref", "number", "no", "num", "key"]
+    if any(col_lower == k or col_lower.endswith(f"_{k}") or col_lower.startswith(f"{k}_")
+           for k in id_keywords):
+        return True
+    # High cardinality numeric column = likely an identifier
+    col_data = df[col_name].dropna()
+    if len(col_data) > 0 and col_data.nunique() / len(col_data) > 0.9:
+        return True
+    return False
+
 def detect_anomalies_python(df, col_classifications):
-    """Python-detected anomalies using mean ± 2 standard deviations."""
-    anomalies = []
-    cat_cols  = df.select_dtypes(include=["object"]).columns.tolist()
+    """
+    Python-detected anomalies using mean ± 2 standard deviations.
+    Excludes: binary flag columns, identifier columns, and meaningless zero-segment alerts.
+    Produces business-readable messages only.
+    """
+    anomalies  = []
+    seen_msgs  = set()  # deduplication
+    cat_cols   = df.select_dtypes(include=["object"]).columns.tolist()
+
+    # Columns to skip entirely — identifiers and binary flags
+    skip_cols = set()
+    for col in col_classifications:
+        s = df[col].dropna()
+        if is_binary_column(s) or is_identifier_column(col, df):
+            skip_cols.add(col)
+
+    # Also skip categorical columns from zero-segment checks if they are identifiers
+    skip_cats = set()
+    for cat in cat_cols:
+        if is_identifier_column(cat, df):
+            skip_cats.add(cat)
 
     for col, ctype in col_classifications.items():
+        if col in skip_cols:
+            continue
         s = df[col].dropna()
         if len(s) < 4:
             continue
@@ -410,54 +448,82 @@ def detect_anomalies_python(df, col_classifications):
         std_val  = s.std()
         if std_val == 0:
             continue
+
         outliers = s[np.abs(s - mean_val) > 2 * std_val]
         if len(outliers) > 0:
+            col_display = col.replace("_", " ").title()
             if ctype == "percentage":
-                anomalies.append({
-                    "column":   col,
-                    "type":     "statistical_outlier",
-                    "finding":  (f"{col}: {len(outliers)} value(s) outside normal range "
-                                 f"(avg: {mean_val:.1f}%, "
-                                 f"outlier range: {outliers.min():.1f}% to {outliers.max():.1f}%)"),
-                    "severity": "HIGH" if len(outliers) > 3 else "MEDIUM"
-                })
+                msg = (f"{col_display}: {len(outliers)} unusual value(s) detected "
+                       f"(normal avg: {mean_val:.1f}%, "
+                       f"unusual range: {outliers.min():.1f}% – {outliers.max():.1f}%)")
             else:
+                msg = (f"{col_display}: {len(outliers)} outlier value(s) detected "
+                       f"(avg: {mean_val:,.0f}, "
+                       f"outlier range: {outliers.min():,.0f} – {outliers.max():,.0f})")
+            if msg not in seen_msgs:
+                seen_msgs.add(msg)
                 anomalies.append({
                     "column":   col,
                     "type":     "statistical_outlier",
-                    "finding":  (f"{col}: {len(outliers)} outlier value(s) "
-                                 f"(avg: {mean_val:,.0f}, "
-                                 f"outlier range: {outliers.min():,.0f} to {outliers.max():,.0f})"),
+                    "finding":  msg,
                     "severity": "HIGH" if len(outliers) > 3 else "MEDIUM"
-                })
-        if ctype == "value":
-            zeros    = (s == 0).sum()
-            zero_pct = zeros / len(s)
-            if zeros > 0 and zero_pct > 0.1:
-                anomalies.append({
-                    "column":   col,
-                    "type":     "zero_values",
-                    "finding":  (f"{col}: {zeros} zero value(s) "
-                                 f"({zero_pct*100:.0f}% of records) — possible missing data"),
-                    "severity": "MEDIUM"
                 })
 
-    for cat in cat_cols[:3]:
-        for col, ctype in list(col_classifications.items())[:4]:
-            if ctype != "value":
-                continue
-            try:
-                grouped       = df.groupby(cat)[col].sum()
-                zero_segs     = grouped[grouped == 0]
-                if len(zero_segs) > 0:
+        # Zero-value check — only for non-binary value columns with meaningful zeros
+        if ctype == "value" and col not in skip_cols:
+            zeros    = (s == 0).sum()
+            zero_pct = zeros / len(s)
+            # Only flag if more than 20% are zero AND column is not expected to have zeros
+            if zeros > 0 and zero_pct > 0.20:
+                col_display = col.replace("_", " ").title()
+                msg = (f"{col_display}: {zeros} zero value(s) "
+                       f"({zero_pct*100:.0f}% of records) — check for missing data")
+                if msg not in seen_msgs:
+                    seen_msgs.add(msg)
                     anomalies.append({
                         "column":   col,
-                        "type":     "zero_segment",
-                        "finding":  f"Zero {col} in {cat}: {list(zero_segs.index)}",
-                        "severity": "HIGH"
+                        "type":     "zero_values",
+                        "finding":  msg,
+                        "severity": "MEDIUM"
                     })
+
+    # Zero-segment check — only meaningful numeric columns against non-identifier categories
+    for cat in cat_cols[:3]:
+        if cat in skip_cats:
+            continue
+        # Only check columns that make business sense to group by this category
+        for col, ctype in list(col_classifications.items())[:4]:
+            if col in skip_cols or ctype != "value":
+                continue
+            # Skip if column is binary
+            if is_binary_column(df[col].dropna()):
+                continue
+            try:
+                grouped   = df.groupby(cat)[col].sum()
+                # Only flag if the segment has rows but zero total — genuine gap
+                seg_counts = df.groupby(cat)[col].count()
+                zero_segs  = [seg for seg in grouped.index
+                               if grouped[seg] == 0 and seg_counts.get(seg, 0) > 0]
+                if zero_segs:
+                    col_display = col.replace("_", " ").title()
+                    cat_display = cat.replace("_", " ").title()
+                    # Limit to max 3 segment names to keep message readable
+                    shown = zero_segs[:3]
+                    extra = f" and {len(zero_segs)-3} more" if len(zero_segs) > 3 else ""
+                    msg   = (f"No {col_display} recorded for {cat_display}: "
+                             f"{', '.join(str(s) for s in shown)}{extra}")
+                    if msg not in seen_msgs:
+                        seen_msgs.add(msg)
+                        anomalies.append({
+                            "column":   col,
+                            "type":     "zero_segment",
+                            "finding":  msg,
+                            "severity": "MEDIUM"
+                        })
             except Exception:
                 pass
+
+    return anomalies[:6]  # Cap at 6 — keep dashboard clean
 
     return anomalies[:8]
 
@@ -1728,17 +1794,46 @@ elif st.session_state.step == "dashboard":
                         if tl.get("target_note"):
                             st.caption(f"ℹ️ {tl['target_note']}")
 
-        # ── ANOMALIES ──
-        py_anomalies  = facts.get("python_detected_anomalies", [])
-        ai_anomalies  = analysis.get("anomalies", [])
-        all_anomalies = py_anomalies + ai_anomalies
+        # ── ANOMALIES — deduplicated, enterprise-styled ──
+        py_anomalies = facts.get("python_detected_anomalies", [])
+        ai_anomalies = analysis.get("anomalies", [])
+
+        # Deduplicate: remove AI anomalies whose text closely matches a Python one
+        py_texts = [a.get("finding","").lower()[:60] for a in py_anomalies]
+        deduped_ai = []
+        for a in ai_anomalies:
+            ai_text = (a.get("description","") or "").lower()[:60]
+            # Skip if AI anomaly is essentially the same finding as a Python one
+            if not any(
+                ai_text[:40] in pt or pt[:40] in ai_text
+                for pt in py_texts
+            ):
+                deduped_ai.append(a)
+
+        all_anomalies = py_anomalies + deduped_ai
+
         if all_anomalies:
+            # Separate by severity for visual hierarchy
+            high   = [a for a in all_anomalies if a.get("severity") == "HIGH"]
+            medium = [a for a in all_anomalies if a.get("severity") == "MEDIUM"]
+            low    = [a for a in all_anomalies if a.get("severity") == "LOW"]
+
             st.markdown("#### ⚠️ Anomaly Alerts")
-            for a in all_anomalies:
-                text     = a.get("finding") or a.get("description", "")
-                severity = a.get("severity","MEDIUM")
-                icon     = {"HIGH":"🔴","MEDIUM":"🟡","LOW":"🔵"}.get(severity,"🔵")
-                st.warning(f"{icon} **{severity}** · {text}")
+            # HIGH first
+            for a in high:
+                text = a.get("finding") or a.get("description","")
+                with st.container(border=True):
+                    st.markdown(f"🔴 **Requires Attention** — {text}")
+            # MEDIUM next
+            for a in medium:
+                text = a.get("finding") or a.get("description","")
+                with st.container(border=True):
+                    st.markdown(f"🟡 **Monitor Closely** — {text}")
+            # LOW last
+            for a in low:
+                text = a.get("finding") or a.get("description","")
+                with st.container(border=True):
+                    st.markdown(f"🔵 **Note** — {text}")
 
         # ── CHARTS — Uniform grid, all same width ──
         charts = analysis.get("charts", [])
