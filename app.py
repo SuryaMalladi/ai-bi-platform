@@ -1351,21 +1351,31 @@ CRITICAL INSTRUCTIONS:
                             try:
                                 chat_facts = build_chat_facts(df, col_classifications)
 
+                                # Pass actual categorical values so AI knows exactly what exists in data
+                                cat_values = {}
+                                for _c in df.select_dtypes(include=["object"]).columns[:6]:
+                                    cat_values[_c] = df[_c].dropna().unique().tolist()[:15]
+
                                 chat_system = (
                                     f"You are NexusIQ answering for a "
                                     f"{analysis.get('role_interpreted', role)} "
                                     f"(Level: {analysis.get('level','L2')}).\n\n"
-                                    "RULES:\n"
-                                    "- Answer in under 150 words\n"
-                                    "- Use ONLY numbers from the pre-computed facts — never invent\n"
-                                    "- If answer not in facts: say 'that detail is not in the dataset'\n"
-                                    "- Percentage columns: describe as averages, never totals\n"
-                                    "- Be direct and specific for this role"
+                                    "ABSOLUTE RULES — NEVER BREAK:\n"
+                                    "1. Use ONLY numbers from the pre-computed facts. Zero exceptions.\n"
+                                    "2. ONLY reference entities (products, regions, departments) that appear "
+                                    "in actual_values_in_data below. If not listed there — it does not exist.\n"
+                                    "3. If the question is about something not in facts or actual_values_in_data "
+                                    "— respond: 'That information is not available in this dataset.'\n"
+                                    "4. Never use training knowledge to fill gaps. Never invent names or values.\n"
+                                    "5. Answer in under 150 words. Be direct for this role.\n"
+                                    "6. Percentage columns: averages only — never totals."
                                 )
 
                                 chat_user = (
-                                    f"Pre-computed facts (Python-verified — only quote these):\n"
+                                    f"Pre-computed facts (Python-verified — only quote these numbers):\n"
                                     f"{chat_facts}\n\n"
+                                    f"actual_values_in_data (ONLY reference entities from this list):\n"
+                                    f"{json.dumps(cat_values, default=str)}\n\n"
                                     f"Data columns: {list(df.columns)}\n"
                                     f"Executive summary: {json.dumps(analysis.get('executive_summary',{}))}\n\n"
                                     f"Question from {analysis.get('role_interpreted', role)}: "
