@@ -15,8 +15,8 @@ import hashlib
 # PAGE CONFIG
 # ─────────────────────────────────────────
 st.set_page_config(
-    page_title="NexusIQ — AI Intelligence Platform",
-    page_icon="⚡",
+    page_title="SIMBA AI — Business Intelligence Platform",
+    page_icon="🦁",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -385,7 +385,7 @@ def enforce_chart_rules(charts, role_profile):
 # ═══════════════════════════════════════════════════════
 # MASTER SYSTEM PROMPT
 # ═══════════════════════════════════════════════════════
-MASTER_PROMPT = """You are a specialist BI analyst AI embedded in NexusIQ.
+MASTER_PROMPT = """You are a specialist BI analyst AI embedded in SIMBA AI.
 
 You receive:
 1. VERIFIED FACTS — numbers computed by Python from the actual data. Absolute ground truth.
@@ -1052,8 +1052,10 @@ def run_completeness_check(analysis, facts):
 
 def run_bias_detection(analysis, df):
     """EF Method 6: Segment coverage check."""
+    date_indicators = ['date','time','period','month','year','week','day','quarter','timestamp']
     cat_cols = [c for c in df.select_dtypes(include=["object"]).columns
-                if df[c].nunique() >= 2]
+                if df[c].nunique() >= 2
+                and not any(k in c.lower() for k in date_indicators)]
     if not cat_cols:
         return "NOT_APPLICABLE", "No categorical columns with 2+ values.", []
     all_text       = json.dumps(analysis, default=str).lower()
@@ -1064,7 +1066,7 @@ def run_bias_detection(analysis, df):
         for val, count in values.items():
             if count / total_rows >= 0.15:
                 if str(val).lower() not in all_text:
-                    uncovered_segs.append(f"{cat}={val}")
+                    uncovered_segs.append(f"{cat}: {val}")
     if not uncovered_segs:
         return "BALANCED", "Coverage Balance: All key segments addressed.", []
     return "IMBALANCED", f"⚠️ Coverage Notice: Not addressed: {', '.join(uncovered_segs[:5])}", uncovered_segs
@@ -1167,8 +1169,13 @@ def detect_pii(df):
     pii_flags = []
     ep = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     pp = r'(\+?\d[\d\s\-]{8,}\d)'
+    # Columns that are clearly date/time — never flag as PII
+    date_indicators = ['date','time','period','month','year','week','day','quarter','timestamp']
     for col in df.columns:
         cl = col.lower()
+        # Skip date columns entirely — dates are not PII
+        if any(k in cl for k in date_indicators):
+            continue
         if any(k in cl for k in ['email','phone','mobile','ssn','passport',
                                   'credit','card','national_id','nid']):
             pii_flags.append(col)
@@ -1208,6 +1215,22 @@ def check_type_inconsistencies(df):
         if len(sample) > 0 and numeric_count / len(sample) > 0.5:
             issues.append(f"{col}: appears to contain mixed numeric and text values")
     return issues
+
+def clean_ai_text(text):
+    """
+    Strip code-style formatting, backticks, and markdown artifacts
+    from AI-generated text before displaying to user.
+    """
+    if not text:
+        return text
+    # Remove backtick code spans
+    text = re.sub(r'`[^`]*`', lambda m: m.group(0).strip('`'), text)
+    # Remove markdown bold/italic
+    text = re.sub(r'\*\*([^*]+)\*\*', r'', text)
+    text = re.sub(r'\*([^*]+)\*', r'', text)
+    # Remove any remaining backticks
+    text = text.replace('`', '')
+    return text.strip()
 
 def detect_industry_from_data(df):
     all_text = " ".join(df.columns).lower()
@@ -1313,10 +1336,14 @@ def sb_load_table(url, key, table_name):
 COLOURS = ["#3b82f6","#10b981","#f59e0b","#ef4444",
            "#6366f1","#8b5cf6","#06b6d4","#f97316"]
 SENTIMENT_COLOURS = {
-    "POSITIVE": "#10b981",
-    "NEGATIVE": "#ef4444",
-    "URGENT":   "#f59e0b",
-    "NEUTRAL":  "#3b82f6",
+    "POSITIVE":  "#10b981",   # green
+    "NEGATIVE":  "#ef4444",   # red
+    "URGENT":    "#f59e0b",   # amber
+    "NEUTRAL":   "#3b82f6",   # blue
+    "positive":  "#10b981",
+    "negative":  "#ef4444",
+    "urgent":    "#f59e0b",
+    "neutral":   "#3b82f6",
 }
 CHART_THEME = dict(
     paper_bgcolor="rgba(0,0,0,0)",
@@ -1355,18 +1382,30 @@ def render_chart(ch, df, col_classifications):
     cols       = df.columns.tolist()
     xc         = exact_col(x_field, cols)
     yc         = exact_col(y_field, cols)
-    primary_colour = SENTIMENT_COLOURS.get(sentiment, "#3b82f6")
+    primary_colour = SENTIMENT_COLOURS.get(str(sentiment).upper(), "#3b82f6")
 
     try:
         if chart_type == "kpi":
-            num_cols   = df.select_dtypes(include=[np.number]).columns.tolist()
-            target_col = yc if yc and yc in num_cols else (num_cols[0] if num_cols else None)
-            if not target_col:
+            num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+            # Prefer yc if specified and valid
+            # But never use a target/budget/quota column as the primary KPI value
+            target_kw = ["target","budget","quota","plan","goal"]
+            if yc and yc in num_cols and not any(k in yc.lower() for k in target_kw):
+                kpi_col = yc
+            else:
+                # Find first non-target numeric column
+                kpi_col = None
+                for c in num_cols:
+                    if not any(k in c.lower() for k in target_kw):
+                        kpi_col = c
+                        break
+                if not kpi_col:
+                    kpi_col = num_cols[0] if num_cols else None
+            if not kpi_col:
                 return None, "No numeric column for KPI."
-            ctype  = col_classifications.get(target_col, "value")
+            ctype  = col_classifications.get(kpi_col, "value")
             is_pct = ctype == "percentage"
-            val    = round(float(df[target_col].mean()), 2) if is_pct \
-                     else round(float(df[target_col].sum()), 2)
+            val    = round(float(df[kpi_col].mean()), 2) if is_pct                      else round(float(df[kpi_col].sum()), 2)
             suffix = "%" if is_pct else ""
             fmt    = ",.1f" if is_pct else ",.0f"
             label  = "average" if is_pct else "total"
@@ -1603,7 +1642,7 @@ def build_chat_facts(df, col_classifications):
     return result_str
 
 def generate_followup_questions(role, level, question, answer, df_columns, cat_values):
-    system = """You are NexusIQ. Generate exactly 3 follow-up questions as a JSON array.
+    system = """You are SIMBA AI. Generate exactly 3 follow-up questions as a JSON array.
 Rules:
 - Questions must suit the role and flow naturally from what was discussed.
 - ONLY reference entities that appear in actual_values_in_data.
@@ -1882,7 +1921,7 @@ def compute_comparison_metrics(facts_a, facts_b):
 # SIDEBAR
 # ═══════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("### ⚡ NexusIQ")
+    st.markdown("### ⚡ SIMBA AI")
     st.caption("AI Intelligence Platform")
     st.divider()
 
@@ -1958,9 +1997,9 @@ with st.sidebar:
 if st.session_state.step == "landing":
     n1, n2 = st.columns([1, 5])
     with n1:
-        st.markdown("### ⚡ NexusIQ")
+        st.markdown("### ⚡ SIMBA AI")
     with n2:
-        st.caption("AI Intelligence Platform · v1.0")
+        st.caption("AI Business Intelligence Platform · v1.0")
     st.markdown("---")
 
     _, hero, _ = st.columns([1, 3, 1])
@@ -2000,7 +2039,7 @@ data sharing and privacy policy before uploading.
                          use_container_width=True):
                 st.session_state.step = "data"
                 st.rerun()
-        st.caption("No login required · Built by Surya")
+        st.caption("No login required · Built by Surya · SIMBA AI v1.0")
 
 # ═══════════════════════════════════════════════════════
 # STEP 2 — DATA SOURCE
@@ -2244,7 +2283,7 @@ elif st.session_state.step == "industry":
         st.stop()
 
     st.markdown("## 🏭 Industry & Domain Detection")
-    st.caption("NexusIQ has analysed your dataset and detected the following business domains.")
+    st.caption("SIMBA AI has analysed your dataset and detected the following business domains.")
     st.markdown("---")
 
     if not st.session_state.detected_domains:
@@ -2292,7 +2331,7 @@ elif st.session_state.step == "role":
         st.stop()
 
     st.markdown("## 👤 Who Are You?")
-    st.markdown("Tell NexusIQ your role — the entire analysis is built specifically for you.")
+    st.markdown("Tell SIMBA AI your role — the entire analysis is built specifically for you.")
     st.markdown("---")
 
     st.markdown("**Your Role**")
@@ -2378,7 +2417,7 @@ elif st.session_state.step == "dashboard":
         label_b    = st.session_state.data_label2
 
         # Top bar
-        st.markdown("### ⚡ NexusIQ — Comparison Mode")
+        st.markdown("### ⚡ SIMBA AI — Comparison Mode")
         st.caption(
             f"Role: **{role_profile.get('title', role)}** · "
             f"{role_profile.get('level','')} · {role_profile.get('function','')} · "
@@ -2391,7 +2430,7 @@ elif st.session_state.step == "dashboard":
 
         # ── AI COMPARISON ──
         if st.session_state.analysis is None:
-            with st.spinner("🧠 NexusIQ is comparing your datasets..."):
+            with st.spinner("🧠 SIMBA AI is comparing your datasets..."):
                 try:
                     comp_result = generate_comparison(
                         facts, facts2, label_a, label_b, role_profile
@@ -2411,7 +2450,7 @@ elif st.session_state.step == "dashboard":
         with st.container(border=True):
             st.markdown(f"#### 📌 Comparison Summary — {role_profile.get('title', role)}")
             for i, key in enumerate(["sentence_1","sentence_2","sentence_3"], 1):
-                s = cs.get(key, "")
+                s = clean_ai_text(cs.get(key, ""))
                 if s:
                     st.markdown(f"**{i}.** {s}")
 
@@ -2500,7 +2539,7 @@ elif st.session_state.step == "dashboard":
 
     # ── GENERATE ANALYSIS ──
     if st.session_state.analysis is None:
-        with st.spinner("🧠 NexusIQ is analysing your data..."):
+        with st.spinner("🧠 SIMBA AI is analysing your data..."):
             try:
                 result = generate_analysis(
                     df, role, role_profile, facts, col_classifications,
@@ -2526,7 +2565,7 @@ elif st.session_state.step == "dashboard":
     # ── TOP BAR ──
     tb1, tb2, tb3 = st.columns([4, 2, 1])
     with tb1:
-        st.markdown("### ⚡ NexusIQ Dashboard")
+        st.markdown("### ⚡ SIMBA AI Dashboard")
         st.caption(
             f"Role: **{analysis.get('role_interpreted', role)}** · "
             f"{analysis.get('level','')} · {analysis.get('function','')} · "
@@ -2556,7 +2595,7 @@ elif st.session_state.step == "dashboard":
         with st.container(border=True):
             st.markdown(f"#### 📌 Executive Summary — {analysis.get('role_interpreted', role)}")
             for i, key in enumerate(["sentence_1","sentence_2","sentence_3"], 1):
-                s = es.get(key, "")
+                s = clean_ai_text(es.get(key, ""))
                 if s:
                     st.markdown(f"**{i}.** {s}")
 
@@ -2707,7 +2746,12 @@ elif st.session_state.step == "dashboard":
                     if r.get("evidence"):
                         st.caption(f"📊 Evidence: {r['evidence']}")
                     if r.get("hypothesis"):
-                        st.caption(f"💭 Possible cause: {r['hypothesis']}")
+                        # Strip the AI's own label if it included it — avoid duplication
+                        hyp = r['hypothesis']
+                        hyp = re.sub(r'^[Pp]ossible cause\s*\([^)]*\)\s*:', '', hyp).strip()
+                        hyp = re.sub(r'^[Pp]ossible cause\s*:', '', hyp).strip()
+                        if hyp:
+                            st.caption(f"💭 Possible cause: {hyp}")
                     st.caption(f"Owner: {r.get('owner','')} · {r.get('timeframe','')}")
 
         # ── NARRATIVE — promoted out of expander per PRD ──
@@ -2750,8 +2794,13 @@ elif st.session_state.step == "dashboard":
         # SELF-SERVICE VISUAL BUILDER — PRD Feature 13
         # ════════════════════════════════════════
         st.markdown("---")
-        st.markdown("#### 🛠️ Build Your Own Analysis")
-        st.caption("Select any columns, choose a chart type, and apply a filter. No code required.")
+        st.markdown("## 🛠️ Build Your Own Analysis")
+        st.markdown(
+            "<p style='color:#64748b;font-size:0.95rem;margin-top:-12px;margin-bottom:16px;'>"
+            "Select any columns, choose a chart type, and apply a filter. "
+            "No code required — mirrors Tableau and Power BI self-service capability.</p>",
+            unsafe_allow_html=True
+        )
 
         with st.container(border=True):
             # Row 1 — column selectors and chart type
@@ -2901,7 +2950,7 @@ elif st.session_state.step == "dashboard":
     if st.session_state.show_chat and chat_col is not None:
         with chat_col:
             with st.container(border=True):
-                st.markdown("#### 💬 Ask NexusIQ")
+                st.markdown("#### 💬 Ask SIMBA AI")
                 st.caption(f"Answering as: **{analysis.get('role_interpreted', role)}**")
                 st.markdown("---")
 
@@ -2919,7 +2968,7 @@ elif st.session_state.step == "dashboard":
                             st.markdown(f"**You:** {msg['content']}")
                             st.markdown("---")
                         else:
-                            st.markdown(f"**NexusIQ:** {msg['content']}")
+                            st.markdown(f"**SIMBA AI:** {msg['content']}")
                             st.markdown("---")
 
                     last = st.session_state.chat_history[-1]
@@ -2937,12 +2986,12 @@ elif st.session_state.step == "dashboard":
                                     prev_msgs = st.session_state.chat_history[-5:-1]
                                     history_context = "Previous conversation:\n"
                                     for m in prev_msgs:
-                                        prefix = "User" if m["role"] == "user" else "NexusIQ"
+                                        prefix = "User" if m["role"] == "user" else "SIMBA AI"
                                         history_context += f"{prefix}: {m['content'][:200]}\n"
                                     history_context += "\n"
 
                                 chat_system = (
-                                    f"You are NexusIQ answering for a "
+                                    f"You are SIMBA AI answering for a "
                                     f"{analysis.get('role_interpreted', role)} "
                                     f"(Level: {analysis.get('level','L2')}).\n\n"
                                     "ABSOLUTE RULES:\n"
@@ -3004,4 +3053,10 @@ elif st.session_state.step == "dashboard":
                 with cc:
                     if st.button("Clear", use_container_width=True):
                         st.session_state.chat_history = []
+                        # Regenerate role-specific suggestions on clear
+                        if st.session_state.verified_facts and st.session_state.role_profile:
+                            st.session_state.chat_suggestions = validate_and_fix_suggestions(
+                                [], st.session_state.verified_facts,
+                                st.session_state.role_profile, df
+                            )
                         st.rerun()
