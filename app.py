@@ -161,13 +161,47 @@ VP/SVP/EVP/GM→Senior Management·L2 | BDM→Business Development Manager·L2
 RSM→Regional Sales Manager·L3 | HRBP→HR Business Partner·L3 | HRD→HR Director·L2
 SD→Sales Director·L2 | BA/DA/DS/BI→Analytical·L4A | PM→Project Manager·L3 | OPS→Operations qualifier
 
-═══ CHART RULES ═══
-- Every chart must answer the role's decision question from this specific data.
+═══ CHART RULES — NON NEGOTIABLE ═══
+- Every chart must answer the DECISION QUESTION for this specific role from this specific data.
 - x_field and y_field must be character-for-character exact matches from exact_column_names list.
 - Never reference a column not in that list.
-- Each column in verified_facts has an aggregation_hint — follow it: "mean" for percentage/rate/score, "sum" for count/value.
-- Chart type must match the data story: line for time trends, bar for category comparison, scatter for correlation, pie for proportions, kpi for single headline number.
-- For time series: only use line charts when x_field is a date or period column.
+- Each column has an aggregation_hint in verified_facts — follow it exactly.
+- Chart type must match the data story: line for time trends, bar for category comparison, scatter for correlation, pie for proportions, kpi for headline number.
+
+CHART TYPE RULES BY LEVEL — STRICTLY ENFORCED:
+
+L1 EXECUTIVE (CFO, CEO, COO, MD, Board):
+ALLOWED: kpi (headline totals), bar (high-level segment comparison), line (org-level trend over time), pie (top-level proportion).
+FORBIDDEN: scatter (too granular), detailed breakdowns by multiple sub-categories.
+GRANULARITY: org-level aggregates only. Never row-level. Max 1 grouping dimension.
+EXAMPLE — Finance data for CFO: KPI card showing total budget, bar chart of actual vs budget by department, line chart of spend trend over time.
+
+L2 SENIOR MANAGEMENT (Director, VP, Head of Function):
+ALLOWED: bar (ranked segment performance), line (trend with variance), kpi (key metric with target gap).
+FORBIDDEN: scatter plots, raw distributions.
+GRANULARITY: departmental or regional breakdown. Up to 2 grouping dimensions.
+
+L3 MID MANAGEMENT (Store Manager, Team Manager, HRBP):
+ALLOWED: bar (their area vs others), line (their area over time), kpi (their specific metric vs target).
+FORBIDDEN: org-level aggregates that obscure their area, scatter plots.
+GRANULARITY: their specific area. Drill down to team or product level.
+
+L4F FRONTLINE:
+ALLOWED: kpi (one headline number), bar (simple comparison of 2-3 values only).
+MAXIMUM: 2 charts. Keep it simple.
+FORBIDDEN: everything else.
+
+L4A ANALYTICAL (Data Analyst, Data Scientist, Business Analyst):
+ALLOWED: scatter (correlations between numeric columns), bar (detailed breakdowns), line (trends with statistical context), distributions.
+FORBIDDEN: kpi cards (too simplistic), high-level summaries without statistical detail.
+GRANULARITY: all columns. Multiple dimensions. Statistical depth required.
+EXAMPLE — Finance data for Analyst: scatter of budget vs actual spend, bar showing variance distribution by department and category, line showing forecast accuracy trend.
+
+SAME DATA — DIFFERENT ROLES MUST PRODUCE DIFFERENT CHARTS:
+If a CFO and a Finance Analyst both analyse the same budget dataset:
+CFO gets: KPI total budget, bar actual vs budget by department.
+Analyst gets: scatter budget vs actual by row, variance distribution, correlation analysis.
+These are genuinely different charts. If they are the same — the system has failed.
 
 ═══ CONFIDENCE LANGUAGE BY LEVEL ═══
 HIGH (100+ rows, consistent pattern):
@@ -1639,23 +1673,46 @@ elif st.session_state.step == "dashboard":
                                             f"{'; '.join(neg_feedback[-2:])}. "
                                             f"Address these specific gaps in this analysis.")
 
+                # Determine role level for chart enforcement
+                # This is passed explicitly so the AI cannot ignore it
+                level_hint = ""
+                role_lower = role.lower()
+                if any(k in role_lower for k in ["cfo","ceo","coo","cmo","chro","md","board",
+                                                  "founder","chairman","president"]):
+                    level_hint = "L1 EXECUTIVE"
+                elif any(k in role_lower for k in ["director","vp","svp","evp","head of",
+                                                    "general manager"]):
+                    level_hint = "L2 SENIOR MANAGEMENT"
+                elif any(k in role_lower for k in ["analyst","scientist","statistician",
+                                                    "engineer","ba","da","ds"]):
+                    level_hint = "L4A ANALYTICAL"
+                elif any(k in role_lower for k in ["supervisor","floor","shift lead",
+                                                    "section lead"]):
+                    level_hint = "L4F FRONTLINE"
+                else:
+                    level_hint = "L3 MID MANAGEMENT"
+
                 user_message = (
                     f"VERIFIED FACTS — Python-computed from the actual dataset.\n"
                     f"These are the ONLY numbers you are allowed to use.\n\n"
                     f"{facts_json}\n\n"
                     f"{'='*50}\n"
                     f"USER ROLE: {role}\n"
+                    f"ROLE LEVEL: {level_hint}\n"
                     f"INDUSTRY: {st.session_state.industry or 'Auto-detected from data'}\n"
                     f"DATA SOURCE: {st.session_state.data_label}\n"
                     f"{'='*50}\n"
                     f"{feedback_context}\n\n"
-                    f"CRITICAL:\n"
+                    f"CRITICAL INSTRUCTIONS:\n"
                     f"1. Every number must come from verified_stats or group_aggregates above.\n"
                     f"2. x_field and y_field: ONLY use names from exact_column_names verbatim.\n"
                     f"3. has_targets={facts['has_targets']} — if False, no target-based traffic lights.\n"
                     f"4. python_detected_anomalies: reference these, do not invent more.\n"
                     f"5. For every negative finding: check group_aggregates for correlated changes.\n"
-                    f"6. Every chart, insight, and recommendation must serve what a {role} "
+                    f"6. ROLE LEVEL IS {level_hint} — apply the exact chart type rules for this level.\n"
+                    f"7. Charts for {role} must be DIFFERENT from what another role would see on this data.\n"
+                    f"   {level_hint} chart rules apply strictly — check the CHART TYPE RULES BY LEVEL section.\n"
+                    f"8. Every chart, insight, and recommendation must serve what a {role} "
                     f"needs to decide — not a generic role."
                 )
 
