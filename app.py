@@ -1532,19 +1532,19 @@ def render_chart(ch, df, col_classifications):
         theme = dict(CHART_THEME)
         theme["yaxis"] = dict(CHART_THEME["yaxis"], tickformat=",.0f" if not use_mean else ".1f")
         fig.update_layout(**theme)
-        # Colour each bar by value — top performers blue, bottom red
-        bar_vals = g[y_label].tolist()
-        if len(bar_vals) > 1:
-            mean_val = sum(bar_vals) / len(bar_vals)
-            bar_colours = []
-            for bv in bar_vals:
-                if bv >= mean_val * 1.05:
-                    bar_colours.append("#10b981")  # green — above average
-                elif bv <= mean_val * 0.85:
-                    bar_colours.append("#ef4444")  # red — below average
-                else:
-                    bar_colours.append(primary_colour)  # neutral
-            fig.update_traces(marker_color=bar_colours)
+        # Only override colour when sentiment is NEGATIVE or URGENT
+        # Otherwise all bars stay uniform primary_colour
+        if sentiment in ("NEGATIVE", "URGENT"):
+            bar_vals = g[y_label].tolist()
+            if len(bar_vals) > 1:
+                mean_val = sum(bar_vals) / len(bar_vals)
+                bar_colours = []
+                for bv in bar_vals:
+                    if bv <= mean_val * 0.85:
+                        bar_colours.append("#ef4444")  # red — significantly below average
+                    else:
+                        bar_colours.append(primary_colour)
+                fig.update_traces(marker_color=bar_colours)
         return fig, None
 
     except Exception as e:
@@ -2065,10 +2065,10 @@ if st.session_state.step == "landing":
     with hero:
         st.markdown(
             "<h1 style='text-align:center;font-size:2.4rem;font-weight:600;line-height:1.25;'>"
-            "Business intelligence<br>"
+            "Business Intelligence<br>"
             "<span style='background:linear-gradient(135deg,#3b82f6,#6366f1);"
             "-webkit-background-clip:text;-webkit-text-fill-color:transparent;"
-            "background-clip:text;'>built for your role</span></h1>",
+            "background-clip:text;'>Built for Your Role</span></h1>",
             unsafe_allow_html=True)
         st.markdown(
             "<p style='text-align:center;color:#64748b;font-size:1rem;"
@@ -2925,12 +2925,15 @@ elif st.session_state.step == "dashboard":
                 filter_col = None if filter_col_label == "No filter" else cat_cols_sb[filter_col_display.index(filter_col_label) - 1]
 
             with sf2:
-                filter_val = None
+                filter_vals_selected = []
                 if filter_col:
-                    filter_vals    = ["All"] + sorted(df[filter_col].dropna().unique().astype(str).tolist())
-                    filter_val_sel = st.selectbox(f"{filter_col.replace('_',' ').title()} value", options=filter_vals, key="sb_filter_val")
-                    if filter_val_sel != "All":
-                        filter_val = filter_val_sel
+                    available_vals = sorted(df[filter_col].dropna().unique().astype(str).tolist())
+                    filter_vals_selected = st.multiselect(
+                        f"{filter_col.replace('_',' ').title()} values",
+                        options=available_vals,
+                        placeholder="Select one or more values...",
+                        key="sb_filter_val"
+                    )
 
             with sf3:
                 st.markdown("")
@@ -2942,8 +2945,8 @@ elif st.session_state.step == "dashboard":
                 try:
                     # Apply filter if set
                     df_filtered = df.copy()
-                    if filter_col and filter_val:
-                        df_filtered = df_filtered[df_filtered[filter_col].astype(str) == filter_val]
+                    if filter_col and filter_vals_selected:
+                        df_filtered = df_filtered[df_filtered[filter_col].astype(str).isin(filter_vals_selected)]
 
                     if df_filtered.empty:
                         st.warning("No data matches this filter. Try a different value.")
@@ -2953,7 +2956,7 @@ elif st.session_state.step == "dashboard":
                         x_label  = x_selected.replace("_"," ").title()
                         y_agg    = "Avg " if use_mean else "Total "
                         y_label  = y_agg + y_selected.replace("_"," ").title()
-                        filter_note = f" — {filter_col.replace('_',' ').title()}: {filter_val}" if filter_val else ""
+                        filter_note = f" — {filter_col.replace('_',' ').title()}: {', '.join(filter_vals_selected)}" if filter_vals_selected else ""
                         chart_title = f"{y_label} by {x_label}{filter_note}"
 
                         sb_chart_type_lower = sb_chart_type.lower()
